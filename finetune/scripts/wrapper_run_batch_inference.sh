@@ -23,17 +23,12 @@ INPUT_LIST="/path/to/input_files.txt"
 OUTPUT_DIR="/path/to/output_directory"
 
 # === REQUIRED: Model Configuration ===
-# HuggingFace model name or path to fine-tuned model directory
-MODEL_PATH="zhihan1996/DNABERT-2-117M"
-
-# === REQUIRED: Classifier Configuration ===
-# Path to trained classifier (.pt for neural network, .pkl for logistic regression)
-CLASSIFIER_PATH="/path/to/classifier.pt"
+# Path to fine-tuned model directory (or HuggingFace model name)
+MODEL_PATH="/path/to/finetuned/model"
 
 # === OPTIONAL: Inference Parameters ===
 BATCH_SIZE="16"
 MAX_LENGTH="512"
-POOLING="mean"
 THRESHOLD="0.5"
 
 #####################################################################
@@ -51,8 +46,8 @@ if [ "${OUTPUT_DIR}" == "/path/to/output_directory" ]; then
     exit 1
 fi
 
-if [ "${CLASSIFIER_PATH}" == "/path/to/classifier.pt" ]; then
-    echo "ERROR: Please set CLASSIFIER_PATH to your trained classifier"
+if [ "${MODEL_PATH}" == "/path/to/finetuned/model" ]; then
+    echo "ERROR: Please set MODEL_PATH to your fine-tuned model directory"
     exit 1
 fi
 
@@ -62,9 +57,12 @@ if [ ! -f "${INPUT_LIST}" ]; then
     exit 1
 fi
 
-if [ ! -f "${CLASSIFIER_PATH}" ]; then
-    echo "ERROR: Classifier file not found: ${CLASSIFIER_PATH}"
-    exit 1
+# Check if MODEL_PATH is a directory (local model) or HuggingFace model name
+if [[ "${MODEL_PATH}" != *"/"* ]] || [ -d "${MODEL_PATH}" ]; then
+    if [ -d "${MODEL_PATH}" ] && [ ! -f "${MODEL_PATH}/config.json" ]; then
+        echo "ERROR: Model directory does not contain config.json: ${MODEL_PATH}"
+        exit 1
+    fi
 fi
 
 # Get script directory
@@ -77,13 +75,11 @@ echo "Input list: ${INPUT_LIST}"
 echo "Output dir: ${OUTPUT_DIR}"
 echo ""
 echo "Model Configuration:"
-echo "  DNABERT-2 Model: ${MODEL_PATH}"
-echo "  Classifier: ${CLASSIFIER_PATH}"
+echo "  Model: ${MODEL_PATH}"
 echo ""
 echo "Inference Parameters:"
 echo "  Batch size: ${BATCH_SIZE}"
 echo "  Max length: ${MAX_LENGTH}"
-echo "  Pooling: ${POOLING}"
 echo "  Threshold: ${THRESHOLD}"
 echo "=========================================="
 
@@ -92,8 +88,6 @@ echo "=========================================="
     --input_list "${INPUT_LIST}" \
     --output_dir "${OUTPUT_DIR}" \
     --model_path "${MODEL_PATH}" \
-    --classifier_path "${CLASSIFIER_PATH}" \
     --batch_size "${BATCH_SIZE}" \
     --max_length "${MAX_LENGTH}" \
-    --pooling "${POOLING}" \
     --threshold "${THRESHOLD}"

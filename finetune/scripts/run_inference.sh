@@ -13,7 +13,7 @@
 #
 # Required environment variables:
 #   INPUT_CSV: Path to CSV file with 'sequence' column
-#   CLASSIFIER_PATH: Path to trained classifier (.pt or .pkl)
+#   MODEL_PATH: Path to fine-tuned model directory
 
 echo "============================================================"
 echo "DNABERT-2 Inference"
@@ -44,10 +44,8 @@ nvidia-smi
 echo ""
 
 # Set defaults
-MODEL_PATH=${MODEL_PATH:-zhihan1996/DNABERT-2-117M}
 BATCH_SIZE=${BATCH_SIZE:-16}
 MAX_LENGTH=${MAX_LENGTH:-512}
-POOLING=${POOLING:-mean}
 THRESHOLD=${THRESHOLD:-0.5}
 
 # Validate required parameters
@@ -56,8 +54,8 @@ if [ -z "${INPUT_CSV}" ]; then
     exit 1
 fi
 
-if [ -z "${CLASSIFIER_PATH}" ]; then
-    echo "ERROR: CLASSIFIER_PATH is not set"
+if [ -z "${MODEL_PATH}" ]; then
+    echo "ERROR: MODEL_PATH is not set"
     exit 1
 fi
 
@@ -75,13 +73,11 @@ echo ""
 echo "============================================================"
 echo "Configuration:"
 echo "============================================================"
-echo "  DNABERT-2 Model: ${MODEL_PATH}"
-echo "  Classifier: ${CLASSIFIER_PATH}"
+echo "  Model: ${MODEL_PATH}"
 echo "  Input CSV: ${INPUT_CSV}"
 echo "  Output CSV: ${OUTPUT_CSV}"
 echo "  Batch size: ${BATCH_SIZE}"
 echo "  Max length: ${MAX_LENGTH}"
-echo "  Pooling: ${POOLING}"
 echo "  Threshold: ${THRESHOLD}"
 echo "============================================================"
 echo ""
@@ -90,11 +86,9 @@ echo ""
 python inference_dnabert2.py \
     --input_csv="${INPUT_CSV}" \
     --model_path="${MODEL_PATH}" \
-    --classifier_path="${CLASSIFIER_PATH}" \
     --output_csv="${OUTPUT_CSV}" \
     --batch_size=${BATCH_SIZE} \
     --max_length=${MAX_LENGTH} \
-    --pooling="${POOLING}" \
     --threshold=${THRESHOLD} \
     --save_metrics
 

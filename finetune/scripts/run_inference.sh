@@ -1,0 +1,110 @@
+#!/bin/bash
+#SBATCH --job-name=dnabert2_inf
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:a100:1
+#SBATCH --mem=32g
+#SBATCH --cpus-per-task=4
+#SBATCH --time=2:00:00
+#SBATCH --output=dnabert2_inf_%j.out
+#SBATCH --error=dnabert2_inf_%j.err
+
+# Biowulf batch script for DNABERT-2 inference
+# Usage: sbatch run_inference.sh
+#
+# Required environment variables:
+#   INPUT_CSV: Path to CSV file with 'sequence' column
+#   CLASSIFIER_PATH: Path to trained classifier (.pt or .pkl)
+
+echo "============================================================"
+echo "DNABERT-2 Inference"
+echo "============================================================"
+echo "Job started at: $(date)"
+echo "Running on node: $(hostname)"
+echo "Job ID: $SLURM_JOB_ID"
+
+# Load modules
+module load conda
+module load CUDA/12.8
+
+# Set CUDA_HOME if not set
+if [ -z "${CUDA_HOME}" ]; then
+    NVCC_PATH=$(which nvcc 2>/dev/null)
+    if [ -n "${NVCC_PATH}" ]; then
+        export CUDA_HOME=$(dirname $(dirname "${NVCC_PATH}"))
+    fi
+fi
+
+# Activate conda environment
+source activate dna
+
+# Check GPU
+echo ""
+echo "GPU Information:"
+nvidia-smi
+echo ""
+
+# Set defaults
+MODEL_PATH=${MODEL_PATH:-zhihan1996/DNABERT-2-117M}
+BATCH_SIZE=${BATCH_SIZE:-16}
+MAX_LENGTH=${MAX_LENGTH:-512}
+POOLING=${POOLING:-mean}
+THRESHOLD=${THRESHOLD:-0.5}
+
+# Validate required parameters
+if [ -z "${INPUT_CSV}" ]; then
+    echo "ERROR: INPUT_CSV is not set"
+    exit 1
+fi
+
+if [ -z "${CLASSIFIER_PATH}" ]; then
+    echo "ERROR: CLASSIFIER_PATH is not set"
+    exit 1
+fi
+
+# Navigate to repo root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "${SCRIPT_DIR}/.." || exit
+echo "Working directory: $(pwd)"
+
+# Set output path
+if [ -z "${OUTPUT_CSV}" ]; then
+    OUTPUT_CSV="${INPUT_CSV%.csv}_predictions.csv"
+fi
+
+echo ""
+echo "============================================================"
+echo "Configuration:"
+echo "============================================================"
+echo "  DNABERT-2 Model: ${MODEL_PATH}"
+echo "  Classifier: ${CLASSIFIER_PATH}"
+echo "  Input CSV: ${INPUT_CSV}"
+echo "  Output CSV: ${OUTPUT_CSV}"
+echo "  Batch size: ${BATCH_SIZE}"
+echo "  Max length: ${MAX_LENGTH}"
+echo "  Pooling: ${POOLING}"
+echo "  Threshold: ${THRESHOLD}"
+echo "============================================================"
+echo ""
+
+# Run inference
+python inference_dnabert2.py \
+    --input_csv="${INPUT_CSV}" \
+    --model_path="${MODEL_PATH}" \
+    --classifier_path="${CLASSIFIER_PATH}" \
+    --output_csv="${OUTPUT_CSV}" \
+    --batch_size=${BATCH_SIZE} \
+    --max_length=${MAX_LENGTH} \
+    --pooling="${POOLING}" \
+    --threshold=${THRESHOLD} \
+    --save_metrics
+
+EXIT_CODE=$?
+
+echo ""
+echo "============================================================"
+echo "Job completed at: $(date)"
+echo "Exit code: ${EXIT_CODE}"
+echo "Predictions saved to: ${OUTPUT_CSV}"
+echo "============================================================"
+
+exit ${EXIT_CODE}

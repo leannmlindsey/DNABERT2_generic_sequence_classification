@@ -615,12 +615,22 @@ def main():
         print(f"  F1: {random_nn_metrics['f1']:.4f}")
         print(f"  MCC: {random_nn_metrics['mcc']:.4f}")
 
+        # Silhouette score for random
+        try:
+            random_sil_score = silhouette_score(test_random, test_labels)
+            results["random_silhouette_score"] = float(random_sil_score)
+            print(f"\nRandom Silhouette Score: {random_sil_score:.4f}")
+        except Exception as e:
+            print(f"\nRandom Silhouette Score: Could not compute ({e})")
+            results["random_silhouette_score"] = None
+
         # PCA for random
         random_pca_path = os.path.join(args.output_dir, "pca_visualization_random.png")
-        create_pca_visualization(
+        random_pc1_var, random_pc2_var = create_pca_visualization(
             test_random, test_labels, random_pca_path,
             title="Random DNABERT-2 Embeddings PCA (Test Set)"
         )
+        results["random_pca_variance_explained"] = {"pc1": float(random_pc1_var), "pc2": float(random_pc2_var)}
 
         # Clean up
         del random_model
@@ -635,15 +645,64 @@ def main():
     # Print summary
     elapsed = time.time() - start_time
     print("\n" + "=" * 60)
-    print("SUMMARY")
+    print("SUMMARY - PRETRAINED MODEL")
     print("=" * 60)
     print(f"Model: {args.model_path}")
     print(f"Embedding dimension: {embedding_dim}")
     print(f"Pooling: {args.pooling}")
-    print(f"\nLinear Probe:     Acc={linear_metrics['accuracy']:.4f}, F1={linear_metrics['f1']:.4f}, MCC={linear_metrics['mcc']:.4f}, AUC={linear_metrics['auc']:.4f}")
-    print(f"3-Layer NN:       Acc={nn_metrics['accuracy']:.4f}, F1={nn_metrics['f1']:.4f}, MCC={nn_metrics['mcc']:.4f}, AUC={nn_metrics['auc']:.4f}")
+    print(f"\nLinear Probe Results:")
+    print(f"  Accuracy: {linear_metrics['accuracy']:.4f}")
+    print(f"  F1: {linear_metrics['f1']:.4f}")
+    print(f"  MCC: {linear_metrics['mcc']:.4f}")
+    print(f"  AUC: {linear_metrics['auc']:.4f}")
+    print(f"\n3-Layer NN Results:")
+    print(f"  Accuracy: {nn_metrics['accuracy']:.4f}")
+    print(f"  F1: {nn_metrics['f1']:.4f}")
+    print(f"  MCC: {nn_metrics['mcc']:.4f}")
+    print(f"  AUC: {nn_metrics['auc']:.4f}")
+    print(f"\nEmbedding Quality:")
     if results.get("silhouette_score"):
-        print(f"Silhouette Score: {results['silhouette_score']:.4f}")
+        print(f"  Silhouette Score: {results['silhouette_score']:.4f}")
+    print(f"  PCA Variance Explained: PC1={results['pca_variance_explained']['pc1']:.2%}, PC2={results['pca_variance_explained']['pc2']:.2%}")
+
+    # Random baseline summary if included
+    if args.include_random_baseline and results.get("random_baseline_linear"):
+        print("\n" + "=" * 60)
+        print("SUMMARY - RANDOM BASELINE")
+        print("=" * 60)
+        print(f"\nLinear Probe Results:")
+        print(f"  Accuracy: {results['random_baseline_linear']['accuracy']:.4f}")
+        print(f"  F1: {results['random_baseline_linear']['f1']:.4f}")
+        print(f"  MCC: {results['random_baseline_linear']['mcc']:.4f}")
+        print(f"  AUC: {results['random_baseline_linear']['auc']:.4f}")
+        print(f"\n3-Layer NN Results:")
+        print(f"  Accuracy: {results['random_baseline_nn']['accuracy']:.4f}")
+        print(f"  F1: {results['random_baseline_nn']['f1']:.4f}")
+        print(f"  MCC: {results['random_baseline_nn']['mcc']:.4f}")
+        print(f"  AUC: {results['random_baseline_nn']['auc']:.4f}")
+        print(f"\nEmbedding Quality:")
+        if results.get("random_silhouette_score"):
+            print(f"  Silhouette Score: {results['random_silhouette_score']:.4f}")
+        if results.get("random_pca_variance_explained"):
+            print(f"  PCA Variance Explained: PC1={results['random_pca_variance_explained']['pc1']:.2%}, PC2={results['random_pca_variance_explained']['pc2']:.2%}")
+
+        # Embedding power calculation
+        print("\n" + "=" * 60)
+        print("EMBEDDING POWER (Pretrained - Random)")
+        print("=" * 60)
+        print(f"\nLinear Probe:")
+        print(f"  Accuracy: {linear_metrics['accuracy'] - results['random_baseline_linear']['accuracy']:+.4f}")
+        print(f"  F1: {linear_metrics['f1'] - results['random_baseline_linear']['f1']:+.4f}")
+        print(f"  MCC: {linear_metrics['mcc'] - results['random_baseline_linear']['mcc']:+.4f}")
+        print(f"  AUC: {linear_metrics['auc'] - results['random_baseline_linear']['auc']:+.4f}")
+        print(f"\n3-Layer NN:")
+        print(f"  Accuracy: {nn_metrics['accuracy'] - results['random_baseline_nn']['accuracy']:+.4f}")
+        print(f"  F1: {nn_metrics['f1'] - results['random_baseline_nn']['f1']:+.4f}")
+        print(f"  MCC: {nn_metrics['mcc'] - results['random_baseline_nn']['mcc']:+.4f}")
+        print(f"  AUC: {nn_metrics['auc'] - results['random_baseline_nn']['auc']:+.4f}")
+        if results.get("silhouette_score") and results.get("random_silhouette_score"):
+            print(f"\nSilhouette Score: {results['silhouette_score'] - results['random_silhouette_score']:+.4f}")
+
     print(f"\nCompleted in {elapsed:.2f} seconds")
     print("=" * 60)
 

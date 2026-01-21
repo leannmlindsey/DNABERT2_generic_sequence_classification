@@ -9,7 +9,7 @@ for seed in 42
 do
     for data in H3 H3K14ac H3K36me3 H3K4me1 H3K4me2 H3K4me3 H3K79me3 H3K9ac H4 H4ac
     do
-        python train.py \
+        python ../train.py \
             --model_name_or_path zhihan1996/DNABERT-2-117M \
             --data_path  $data_path/GUE/EMP/$data \
             --kmer -1 \

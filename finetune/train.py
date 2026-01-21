@@ -3,6 +3,7 @@ import csv
 import copy
 import json
 import logging
+import pandas as pd
 from dataclasses import dataclass, field
 from typing import Any, Optional, Dict, Sequence, Tuple, List, Union
 
@@ -118,22 +119,49 @@ class SupervisedDataset(Dataset):
 
         super(SupervisedDataset, self).__init__()
 
-        # load data from the disk
-        with open(data_path, "r") as f:
-            data = list(csv.reader(f))[1:]
-        if len(data[0]) == 2:
-            # data is in the format of [text, label]
+        # load data from the disk using pandas
+        df = pd.read_csv(data_path)
+        columns_lower = df.columns.str.lower().tolist()
+
+        # Try named columns first, then fall back to positional indexing for backward compatibility
+        if "sequence" in columns_lower:
             logging.warning("Perform single sequence classification...")
-            texts = [d[0] for d in data]
-            labels = [int(d[1]) for d in data]
-        elif len(data[0]) == 3:
-            # data is in the format of [text1, text2, label]
+            seq_col = df.columns[columns_lower.index("sequence")]
+            label_col = df.columns[columns_lower.index("label")]
+            texts = df[seq_col].tolist()
+            labels = df[label_col].astype(int).tolist()
+        elif "text" in columns_lower:
+            logging.warning("Perform single sequence classification...")
+            text_col = df.columns[columns_lower.index("text")]
+            label_col = df.columns[columns_lower.index("label")]
+            texts = df[text_col].tolist()
+            labels = df[label_col].astype(int).tolist()
+        elif "sequence1" in columns_lower and "sequence2" in columns_lower:
             logging.warning("Perform sequence-pair classification...")
-            texts = [[d[0], d[1]] for d in data]
-            labels = [int(d[2]) for d in data]
+            seq1_col = df.columns[columns_lower.index("sequence1")]
+            seq2_col = df.columns[columns_lower.index("sequence2")]
+            label_col = df.columns[columns_lower.index("label")]
+            texts = df[[seq1_col, seq2_col]].values.tolist()
+            labels = df[label_col].astype(int).tolist()
+        elif "text1" in columns_lower and "text2" in columns_lower:
+            logging.warning("Perform sequence-pair classification...")
+            text1_col = df.columns[columns_lower.index("text1")]
+            text2_col = df.columns[columns_lower.index("text2")]
+            label_col = df.columns[columns_lower.index("label")]
+            texts = df[[text1_col, text2_col]].values.tolist()
+            labels = df[label_col].astype(int).tolist()
+        # Backward compatibility: fall back to positional indexing
+        elif len(df.columns) == 2:
+            logging.warning("Perform single sequence classification (positional columns)...")
+            texts = df.iloc[:, 0].tolist()
+            labels = df.iloc[:, 1].astype(int).tolist()
+        elif len(df.columns) == 3:
+            logging.warning("Perform sequence-pair classification (positional columns)...")
+            texts = df.iloc[:, [0, 1]].values.tolist()
+            labels = df.iloc[:, 2].astype(int).tolist()
         else:
-            raise ValueError("Data format not supported.")
-        
+            raise ValueError("Data format not supported. CSV must contain 'sequence' and 'label' columns, or use 2-column (text, label) or 3-column (text1, text2, label) format.")
+
         if kmer != -1:
             # only write file on the first process
             if torch.distributed.get_rank() not in [0, -1]:

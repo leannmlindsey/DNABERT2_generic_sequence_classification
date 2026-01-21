@@ -202,7 +202,11 @@ def extract_embeddings(
 
         with torch.no_grad():
             outputs = model(**inputs)
-            hidden_states = outputs.last_hidden_state  # [batch, seq_len, 768]
+            # Handle both tuple and dict outputs (DNABERT-2 returns tuple by default)
+            if isinstance(outputs, tuple):
+                hidden_states = outputs[0]  # First element is last_hidden_state
+            else:
+                hidden_states = outputs.last_hidden_state  # [batch, seq_len, 768]
 
             # Apply pooling
             if pooling == "mean":

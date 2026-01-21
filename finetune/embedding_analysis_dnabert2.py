@@ -409,59 +409,82 @@ def main():
     print(f"  Val samples: {len(val_df)}")
     print(f"  Test samples: {len(test_df)}")
 
-    # Load model and tokenizer
-    print(f"\nLoading DNABERT-2 model from: {args.model_path}")
+    # Load tokenizer (always needed)
+    print(f"\nLoading tokenizer from: {args.model_path}")
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_path,
         trust_remote_code=True,
     )
-    model = AutoModel.from_pretrained(
-        args.model_path,
-        trust_remote_code=True,
-    )
-    model.to(device)
-    model.eval()
 
-    # Get embedding dimension
-    embedding_dim = model.config.hidden_size
-    print(f"  Embedding dimension: {embedding_dim}")
-
-    # Extract embeddings
-    print(f"\nExtracting embeddings (pooling={args.pooling})...")
-
-    train_embeddings = extract_embeddings(
-        model, tokenizer, train_df["sequence"].tolist(),
-        args.batch_size, args.max_length, args.pooling, device,
-    )
-    val_embeddings = extract_embeddings(
-        model, tokenizer, val_df["sequence"].tolist(),
-        args.batch_size, args.max_length, args.pooling, device,
-    )
-    test_embeddings = extract_embeddings(
-        model, tokenizer, test_df["sequence"].tolist(),
-        args.batch_size, args.max_length, args.pooling, device,
-    )
-
+    # Get labels
     train_labels = train_df["label"].values
     val_labels = val_df["label"].values
     test_labels = test_df["label"].values
 
-    print(f"  Train embeddings shape: {train_embeddings.shape}")
-    print(f"  Val embeddings shape: {val_embeddings.shape}")
-    print(f"  Test embeddings shape: {test_embeddings.shape}")
-
-    # Save embeddings
+    # Check if pretrained embeddings already exist
     embeddings_path = os.path.join(args.output_dir, "embeddings_pretrained.npz")
-    np.savez(
-        embeddings_path,
-        train_embeddings=train_embeddings,
-        train_labels=train_labels,
-        val_embeddings=val_embeddings,
-        val_labels=val_labels,
-        test_embeddings=test_embeddings,
-        test_labels=test_labels,
-    )
-    print(f"\nSaved embeddings to: {embeddings_path}")
+    print(f"\nChecking for cached embeddings at: {embeddings_path}")
+
+    if os.path.exists(embeddings_path):
+        print(f"Found existing embeddings at: {embeddings_path}")
+        print("Loading embeddings from file (delete file to re-extract)...")
+        loaded = np.load(embeddings_path)
+        train_embeddings = loaded["train_embeddings"]
+        val_embeddings = loaded["val_embeddings"]
+        test_embeddings = loaded["test_embeddings"]
+        embedding_dim = train_embeddings.shape[1]
+        print(f"  Loaded embeddings - shape: {test_embeddings.shape}")
+        print(f"  Embedding dimension: {embedding_dim}")
+    else:
+        # Load model only if we need to extract embeddings
+        print(f"\nLoading DNABERT-2 model from: {args.model_path}")
+        model = AutoModel.from_pretrained(
+            args.model_path,
+            trust_remote_code=True,
+        )
+        model.to(device)
+        model.eval()
+
+        # Get embedding dimension
+        embedding_dim = model.config.hidden_size
+        print(f"  Embedding dimension: {embedding_dim}")
+
+        # Extract embeddings
+        print(f"\nExtracting embeddings (pooling={args.pooling})...")
+
+        train_embeddings = extract_embeddings(
+            model, tokenizer, train_df["sequence"].tolist(),
+            args.batch_size, args.max_length, args.pooling, device,
+        )
+        val_embeddings = extract_embeddings(
+            model, tokenizer, val_df["sequence"].tolist(),
+            args.batch_size, args.max_length, args.pooling, device,
+        )
+        test_embeddings = extract_embeddings(
+            model, tokenizer, test_df["sequence"].tolist(),
+            args.batch_size, args.max_length, args.pooling, device,
+        )
+
+        print(f"  Train embeddings shape: {train_embeddings.shape}")
+        print(f"  Val embeddings shape: {val_embeddings.shape}")
+        print(f"  Test embeddings shape: {test_embeddings.shape}")
+
+        # Save embeddings
+        np.savez(
+            embeddings_path,
+            train_embeddings=train_embeddings,
+            train_labels=train_labels,
+            val_embeddings=val_embeddings,
+            val_labels=val_labels,
+            test_embeddings=test_embeddings,
+            test_labels=test_labels,
+        )
+        print(f"\nSaved embeddings to: {embeddings_path}")
+
+        # Free model memory
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # Results dictionary
     results = {
@@ -568,27 +591,57 @@ def main():
         print("Random Baseline (Randomly Initialized Model)")
         print("=" * 60)
 
-        # Create random model with same architecture
-        from transformers import AutoConfig
-        config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
-        random_model = AutoModel.from_config(config, trust_remote_code=True)
-        random_model.to(device)
-        random_model.eval()
+        # Check if random embeddings already exist
+        embeddings_path_random = os.path.join(args.output_dir, "embeddings_random.npz")
+        print(f"\nChecking for cached random embeddings at: {embeddings_path_random}")
 
-        # Extract random embeddings
-        print("Extracting random embeddings...")
-        train_random = extract_embeddings(
-            random_model, tokenizer, train_df["sequence"].tolist(),
-            args.batch_size, args.max_length, args.pooling, device,
-        )
-        val_random = extract_embeddings(
-            random_model, tokenizer, val_df["sequence"].tolist(),
-            args.batch_size, args.max_length, args.pooling, device,
-        )
-        test_random = extract_embeddings(
-            random_model, tokenizer, test_df["sequence"].tolist(),
-            args.batch_size, args.max_length, args.pooling, device,
-        )
+        if os.path.exists(embeddings_path_random):
+            print(f"Found existing random embeddings at: {embeddings_path_random}")
+            print("Loading embeddings from file (delete file to re-extract)...")
+            loaded_random = np.load(embeddings_path_random)
+            train_random = loaded_random["train_embeddings"]
+            val_random = loaded_random["val_embeddings"]
+            test_random = loaded_random["test_embeddings"]
+            print(f"  Loaded random embeddings - shape: {test_random.shape}")
+        else:
+            # Create random model with same architecture
+            from transformers import AutoConfig
+            config = AutoConfig.from_pretrained(args.model_path, trust_remote_code=True)
+            random_model = AutoModel.from_config(config, trust_remote_code=True)
+            random_model.to(device)
+            random_model.eval()
+
+            # Extract random embeddings
+            print("Extracting random embeddings...")
+            train_random = extract_embeddings(
+                random_model, tokenizer, train_df["sequence"].tolist(),
+                args.batch_size, args.max_length, args.pooling, device,
+            )
+            val_random = extract_embeddings(
+                random_model, tokenizer, val_df["sequence"].tolist(),
+                args.batch_size, args.max_length, args.pooling, device,
+            )
+            test_random = extract_embeddings(
+                random_model, tokenizer, test_df["sequence"].tolist(),
+                args.batch_size, args.max_length, args.pooling, device,
+            )
+
+            # Save random embeddings
+            np.savez(
+                embeddings_path_random,
+                train_embeddings=train_random,
+                train_labels=train_labels,
+                val_embeddings=val_random,
+                val_labels=val_labels,
+                test_embeddings=test_random,
+                test_labels=test_labels,
+            )
+            print(f"\nSaved random embeddings to: {embeddings_path_random}")
+
+            # Clean up
+            del random_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Linear probe on random
         random_linear_metrics, _, _ = train_linear_probe(
@@ -631,10 +684,6 @@ def main():
             title="Random DNABERT-2 Embeddings PCA (Test Set)"
         )
         results["random_pca_variance_explained"] = {"pc1": float(random_pc1_var), "pc2": float(random_pc2_var)}
-
-        # Clean up
-        del random_model
-        torch.cuda.empty_cache()
 
     # Save all results
     results_path = os.path.join(args.output_dir, "embedding_analysis_results.json")

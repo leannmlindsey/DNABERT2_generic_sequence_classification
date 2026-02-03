@@ -60,10 +60,11 @@ if [ -z "${MODEL_PATH}" ]; then
 fi
 
 # Navigate to repo root
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "${SCRIPT_DIR}/.." || exit
-echo "Working directory: $(pwd)"
-
+#SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+#cd "${SCRIPT_DIR}/.." || exit
+#echo "Working directory: $(pwd)"
+SCRIPT_DIR="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune"
+cd $SCRIPT_DIR
 # Set output path
 if [ -z "${OUTPUT_CSV}" ]; then
     OUTPUT_CSV="${INPUT_CSV%.csv}_predictions.csv"

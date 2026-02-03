@@ -15,7 +15,7 @@
 
 # === REQUIRED: Dataset Configuration ===
 # Path to directory containing train.csv, dev.csv (or val.csv), test.csv
-export CSV_DIR="/path/to/your/csv/data"
+export CSV_DIR="/home/lindseylm/lindseylm/lambda_final/merged_datasets_filtered/2k"
 
 # === OPTIONAL: Model Configuration ===
 # HuggingFace model name or local path
@@ -38,7 +38,7 @@ export NN_LR="0.001"
 
 # === OPTIONAL: Include Random Baseline ===
 # Set to "true" to also run analysis on randomly initialized model for comparison
-export INCLUDE_RANDOM_BASELINE="false"
+export INCLUDE_RANDOM_BASELINE="true"
 
 #####################################################################
 # END CONFIGURATION

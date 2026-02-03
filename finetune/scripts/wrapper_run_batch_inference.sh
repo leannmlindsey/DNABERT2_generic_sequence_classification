@@ -16,16 +16,20 @@
 #   /path/to/dataset1.csv
 #   /path/to/dataset2.csv
 #   /path/to/dataset3.csv
-INPUT_LIST="/path/to/input_files.txt"
-
+#INPUT_LIST="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/scripts/input_files.txt"
+INPUT_LIST="genome_files_4k.txt"
+#INPUT_LIST="input_files_4k.txt"
+#INPUT_LIST="genome_files_2k.txt"
+#INPUT_LIST="input_files_2k.txt"
 # === REQUIRED: Output Directory ===
 # All predictions and SLURM logs will be saved here
-OUTPUT_DIR="/path/to/output_directory"
+OUTPUT_DIR="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/results/inference/4k"
+#OUTPUT_DIR="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/results/inference/2k"
 
 # === REQUIRED: Model Configuration ===
-# Path to fine-tuned model directory (or HuggingFace model name)
-MODEL_PATH="/path/to/finetuned/model"
-
+# HuggingFace model name or path to fine-tuned model directory
+MODEL_PATH="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/scripts/output/dnabert2_lambda_filtered_4k_lr3e-5_seed10/checkpoint-20400"
+#MODEL_PATH="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/scripts/output/lambda_filtered/dnabert2_lambda_filtered_2k_lr3e-5_seed7/checkpoint-20400"
 # === OPTIONAL: Inference Parameters ===
 BATCH_SIZE="16"
 MAX_LENGTH="512"
@@ -66,8 +70,8 @@ if [[ "${MODEL_PATH}" != *"/"* ]] || [ -d "${MODEL_PATH}" ]; then
 fi
 
 # Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
+#SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/scripts"
 echo "=========================================="
 echo "Submitting DNABERT-2 Batch Inference Jobs"
 echo "=========================================="

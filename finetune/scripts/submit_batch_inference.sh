@@ -99,7 +99,8 @@ fi
 mkdir -p "${OUTPUT_DIR}"
 
 # Get the directory of this script (for finding run_inference.sh)
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="/data/lindseylm/GLM_EVALUATIONS/MODELS/DNABERT2/DNABERT_2/finetune/scripts"
+cd $SCRIPT_DIR
 INFERENCE_SCRIPT="${SCRIPT_DIR}/run_inference.sh"
 
 if [ ! -f "${INFERENCE_SCRIPT}" ]; then

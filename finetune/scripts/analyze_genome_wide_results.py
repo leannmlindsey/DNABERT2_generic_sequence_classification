@@ -344,6 +344,8 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
             genome_id_match = re.match(r'((?:NC|NZ|GCF|GCA)_[A-Z0-9.]+)', json_basename)
 
             for candidate in [candidate1, candidate2]:
+                if verbose:
+                    print(f"  Trying CSV: {candidate} -> {'FOUND' if os.path.exists(candidate) else 'NOT FOUND'}")
                 if os.path.exists(candidate):
                     csv_file = candidate
                     break

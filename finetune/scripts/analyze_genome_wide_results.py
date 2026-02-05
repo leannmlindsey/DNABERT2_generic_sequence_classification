@@ -335,13 +335,13 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
             json_dir = os.path.dirname(json_file)
             json_basename = os.path.basename(json_file)
 
-            # Pattern 1: direct replacement (e.g., NC_003197_metrics.json -> NC_003197.csv)
-            candidate1 = json_file.replace('_metrics.json', '.csv')
-            # Pattern 2: predictions file (e.g., NC_003197_metrics.json -> NC_003197_segments_predictions.csv)
-            candidate2 = json_file.replace('_metrics.json', '_segments_predictions.csv')
+            # Pattern 1: _metrics.json -> _predictions.csv (e.g., genome_segments_metrics.json -> genome_segments_predictions.csv)
+            candidate1 = json_file.replace('_metrics.json', '_predictions.csv')
+            # Pattern 2: direct replacement (e.g., NC_003197_metrics.json -> NC_003197.csv)
+            candidate2 = json_file.replace('_metrics.json', '.csv')
             # Pattern 3: extract genome ID and search for matching CSV
-            # Genome IDs typically look like NC_XXXXXX, NZ_XXXXXX, etc.
-            genome_id_match = re.match(r'([A-Z]{2}_[A-Z0-9]+)', json_basename)
+            # Genome IDs typically look like NC_XXXXXX, NZ_XXXXXX, GCF_XXXXXX, GCA_XXXXXX, etc.
+            genome_id_match = re.match(r'((?:NC|NZ|GCF|GCA)_[A-Z0-9.]+)', json_basename)
 
             for candidate in [candidate1, candidate2]:
                 if os.path.exists(candidate):
@@ -351,7 +351,7 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
             # If still not found, search for CSV with matching genome ID
             if csv_file is None and genome_id_match:
                 genome_id = genome_id_match.group(1)
-                matching_csvs = glob.glob(os.path.join(json_dir, f"{genome_id}*.csv"))
+                matching_csvs = glob.glob(os.path.join(json_dir, f"{genome_id}*predictions.csv"))
                 # Filter out any summary CSVs
                 matching_csvs = [f for f in matching_csvs if 'summary' not in f.lower()]
                 if matching_csvs:

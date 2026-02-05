@@ -2,6 +2,7 @@ import json
 import glob
 import os
 import math
+import re
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -266,14 +267,19 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Find all JSON files
-    json_files = glob.glob(os.path.join(directory_path, '*.json'))
+    # Find all JSON files, excluding summary/aggregate files
+    all_json_files = glob.glob(os.path.join(directory_path, '*.json'))
+
+    # Filter out summary files (files with 'summary' in name or other aggregate files)
+    json_files = [f for f in all_json_files if not any(skip in os.path.basename(f).lower()
+                  for skip in ['summary', 'aggregate', 'combined', 'total'])]
 
     if not json_files:
         print(f"No JSON files found in {directory_path}")
+        print(f"(Found {len(all_json_files)} JSON files but all were filtered as summary files)")
         return None, None, None
 
-    print(f"Found {len(json_files)} JSON files")
+    print(f"Found {len(json_files)} genome JSON files (skipped {len(all_json_files) - len(json_files)} summary files)")
 
     # Store individual file results
     results = []
@@ -294,6 +300,11 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
     filt_total_fn = 0
 
     total_samples = 0
+
+    # Track CSV file matching
+    csv_found_count = 0
+    csv_missing_count = 0
+    csv_missing_genomes = []
 
     # Process each JSON file
     for json_file in json_files:
@@ -319,9 +330,35 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
             phage_regions = []
 
             # Find corresponding CSV file for filtering
-            csv_file = json_file.replace('_metrics.json', '.csv')
+            # Try multiple naming patterns
+            csv_file = None
+            json_dir = os.path.dirname(json_file)
+            json_basename = os.path.basename(json_file)
 
-            if os.path.exists(csv_file):
+            # Pattern 1: direct replacement (e.g., NC_003197_metrics.json -> NC_003197.csv)
+            candidate1 = json_file.replace('_metrics.json', '.csv')
+            # Pattern 2: predictions file (e.g., NC_003197_metrics.json -> NC_003197_segments_predictions.csv)
+            candidate2 = json_file.replace('_metrics.json', '_segments_predictions.csv')
+            # Pattern 3: extract genome ID and search for matching CSV
+            # Genome IDs typically look like NC_XXXXXX, NZ_XXXXXX, etc.
+            genome_id_match = re.match(r'([A-Z]{2}_[A-Z0-9]+)', json_basename)
+
+            for candidate in [candidate1, candidate2]:
+                if os.path.exists(candidate):
+                    csv_file = candidate
+                    break
+
+            # If still not found, search for CSV with matching genome ID
+            if csv_file is None and genome_id_match:
+                genome_id = genome_id_match.group(1)
+                matching_csvs = glob.glob(os.path.join(json_dir, f"{genome_id}*.csv"))
+                # Filter out any summary CSVs
+                matching_csvs = [f for f in matching_csvs if 'summary' not in f.lower()]
+                if matching_csvs:
+                    csv_file = matching_csvs[0]  # Take first match
+
+            if csv_file and os.path.exists(csv_file):
+                csv_found_count += 1
                 if verbose:
                     print(f"\n{'='*60}")
                     print(f"Genome: {genome_name}")
@@ -377,8 +414,10 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
                     if verbose:
                         print(f"WARNING: CSV file missing 'pred_label' column")
             else:
+                csv_missing_count += 1
+                csv_missing_genomes.append(genome_name)
                 if verbose:
-                    print(f"WARNING: CSV file not found: {csv_file}, using raw metrics only")
+                    print(f"WARNING: CSV file not found for {genome_name}, using raw metrics only")
 
             # Add phage regions to the collection
             for region in phage_regions:
@@ -573,6 +612,15 @@ def summarize_genome_predictions(directory_path, model_name, output_dir='.',
     print(f"\nProcessed {len(results)} genomes")
     print(f"Total samples: {total_samples}")
     print(f"Total phage regions predicted: {len(all_phage_predictions)}")
+
+    # Print CSV file matching summary
+    print(f"\nCSV file matching: {csv_found_count}/{len(results)} found")
+    if csv_missing_count > 0:
+        print(f"  WARNING: {csv_missing_count} genomes missing CSV files (raw metrics used for filtered)")
+        if csv_missing_count <= 10:
+            print(f"  Missing: {', '.join(csv_missing_genomes)}")
+        else:
+            print(f"  First 10 missing: {', '.join(csv_missing_genomes[:10])}...")
 
     print(f"\n{'='*70}")
     print("SUMMARY COMPARISON: RAW vs FILTERED")

@@ -276,8 +276,12 @@ def train():
     train_dataset = SupervisedDataset(tokenizer=tokenizer, 
                                       data_path=os.path.join(data_args.data_path, "train.csv"), 
                                       kmer=data_args.kmer)
-    val_dataset = SupervisedDataset(tokenizer=tokenizer, 
-                                     data_path=os.path.join(data_args.data_path, "dev.csv"), 
+    # LAMBDA_v1 ships val.csv; older internal datasets ship dev.csv. Accept either.
+    val_csv = os.path.join(data_args.data_path, "dev.csv")
+    if not os.path.exists(val_csv):
+        val_csv = os.path.join(data_args.data_path, "val.csv")
+    val_dataset = SupervisedDataset(tokenizer=tokenizer,
+                                     data_path=val_csv,
                                      kmer=data_args.kmer)
     test_dataset = SupervisedDataset(tokenizer=tokenizer, 
                                      data_path=os.path.join(data_args.data_path, "test.csv"), 

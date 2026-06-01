@@ -16,14 +16,15 @@
 # Optional env:
 #   BATCH_SIZE (16), CONDA_ENV (dna)
 
-set -euo pipefail
 
 echo "=== inference ${VARIANT}  input=${INPUT_CSV}  output=${OUTPUT_FILENAME} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-module load conda 2>/dev/null || true
-module load CUDA/12.8 2>/dev/null || true
-conda activate "${CONDA_ENV:-dna}" 2>/dev/null || source activate "${CONDA_ENV:-dna}" 2>/dev/null || true
+# Activate conda (module load conda; source activate dna).
+module load conda
+module load CUDA/12.8
+source activate "${CONDA_ENV:-dna}"
+echo "  conda env: ${CONDA_DEFAULT_ENV:-<none>}   python: $(command -v python || echo none)"
 export PYTHONNOUSERSITE=1
 
 export HF_HUB_OFFLINE=1

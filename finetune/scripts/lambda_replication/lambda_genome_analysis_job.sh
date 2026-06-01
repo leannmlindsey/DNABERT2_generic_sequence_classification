@@ -17,13 +17,14 @@
 # Optional env:
 #   MERGE_GAP (5000), MIN_CLUSTER_SIZE (5000), SMOOTH_WINDOW (5), CONDA_ENV (dna)
 
-set -euo pipefail
 
 echo "=== genome analysis ${VARIANT} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-module load conda 2>/dev/null || true
-conda activate "${CONDA_ENV:-dna}" 2>/dev/null || source activate "${CONDA_ENV:-dna}" 2>/dev/null || true
+# Activate conda (module load conda; source activate dna). CPU-only: no CUDA module.
+module load conda
+source activate "${CONDA_ENV:-dna}"
+echo "  conda env: ${CONDA_DEFAULT_ENV:-<none>}   python: $(command -v python || echo none)"
 export PYTHONNOUSERSITE=1
 
 if [ -z "${REPO_ROOT:-}" ]; then

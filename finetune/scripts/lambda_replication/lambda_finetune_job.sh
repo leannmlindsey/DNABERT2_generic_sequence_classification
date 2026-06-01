@@ -16,14 +16,15 @@
 #   BASE_MODEL (zhihan1996/DNABERT-2-117M), LR (3e-5), BATCH_SIZE (8),
 #   EVAL_BATCH_SIZE (16), NUM_EPOCHS (3), USE_FP16 (1|0), CONDA_ENV (dna)
 
-set -euo pipefail
 
 echo "=== finetune ${VARIANT} seed=${SEED} len=${LEN:-?} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-module load conda 2>/dev/null || true
-module load CUDA/12.8 2>/dev/null || true
-conda activate "${CONDA_ENV:-dna}" 2>/dev/null || source activate "${CONDA_ENV:-dna}" 2>/dev/null || true
+# Activate conda (module load conda; source activate dna).
+module load conda
+module load CUDA/12.8
+source activate "${CONDA_ENV:-dna}"
+echo "  conda env: ${CONDA_DEFAULT_ENV:-<none>}   python: $(command -v python || echo none)"
 export PYTHONNOUSERSITE=1
 
 # Stay offline so the Biowulf HTTPS proxy can't 503 us mid-run. Cache must be

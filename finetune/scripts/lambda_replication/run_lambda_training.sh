@@ -15,7 +15,6 @@
 #   3. Wait for jobs: squeue -u $USER
 #   4. bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 
-set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # REPO_ROOT is the finetune/ dir (holds train.py, inference_dnabert2.py,

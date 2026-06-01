@@ -21,7 +21,6 @@
 # Usage (after run_lambda_training.sh has finished — verify with `squeue`):
 #   bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 
-set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"

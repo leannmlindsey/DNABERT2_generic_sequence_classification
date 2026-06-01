@@ -34,7 +34,7 @@ finetune/
 Everything lands under `OUTPUT_DIR` from the config:
 
 ```
-/data/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2/DNABERT2_generic_sequence_classification/outputs/
+/data/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/outputs/
   <ws>/                                  # 2k, 4k
     finetune/<variant>/seed-<N>/         # saved model + test_results.json
     embedding/<variant>/                 # embedding_analysis_results.json + .npz + .pkl
@@ -54,8 +54,8 @@ login node (which has outbound HTTPS):
 
 ```bash
 export HF_HOME=/data/lindseylm/.cache/huggingface
-module load conda 2>/dev/null || true
-conda activate dna
+module load conda
+source activate dna
 python - <<'PY'
 from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification
 m = "zhihan1996/DNABERT-2-117M"
@@ -76,7 +76,7 @@ cd /path/to/DNABERT2_generic_sequence_classification/finetune
 
 REPO_ROOT="$(pwd)"
 LAMBDA_DIR="/vf/users/Irp-jiang/share/lindseylm/LAMBDA_v1/train_val_test/2k"
-OUT="/data/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2/DNABERT2_generic_sequence_classification/outputs/2k"
+OUT="/data/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/outputs/2k"
 
 sbatch --job-name=smoke_ft_2k_dnabert2_s1 \
   --partition=gpu --gres=gpu:a100:1 --mem=64g --time=8:00:00 --cpus-per-task=8 \

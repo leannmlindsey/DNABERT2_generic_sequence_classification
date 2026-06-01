@@ -1,251 +1,197 @@
-# DNABERT-2: Efficient Foundation Model and Benchmark for Multi-Species Genome
+# DNABERT-2 Generic Sequence Classification
 
-The repo contains: 
+> **Fork of [MAGICS-LAB/DNABERT_2](https://github.com/MAGICS-LAB/DNABERT_2)** — adds generic CSV-based binary classification scripts, used to benchmark DNABERT-2 on the [LAMBDA prophage-detection benchmark](https://github.com/leannmlindsey/LAMBDA).
+>
+> Original docs preserved verbatim in [`UPSTREAM_README.md`](./UPSTREAM_README.md).
 
-1. The official implementation of [DNABERT-2: Efficient Foundation Model and Benchmark for Multi-Species Genome](https://arxiv.org/abs/2306.15006)
-2. Genome Understanding Evaluation (GUE): a comprehensize benchmark containing 28 datasets for multi-species genome understanding benchmark.
+---
 
+## Relationship to the upstream training code
 
+The fine-tune entry point in this fork (`finetune/train.py`) is upstream's own
+training script — a thin layer over `transformers.Trainer` with
+`AutoModelForSequenceClassification`, driven by `HfArgumentParser`. This fork
+does not replace it; it preserves the script and drives it from SLURM wrappers.
+The only code change is that the validation split now falls back to `val.csv`
+when `dev.csv` is absent (LAMBDA_v1 ships `val.csv`). The defaults below come
+from upstream's documented finetune example; the LAMBDA wrappers set the
+LAMBDA-specific values and pass every flag through so they can be overridden:
 
-## Contents
+| Parameter | Default (this fork) | Source / rationale |
+|-----------|---------------------|--------------------|
+| `model_name_or_path` | `zhihan1996/DNABERT-2-117M` | upstream |
+| `kmer` | -1 (BPE, no k-mer) | upstream — DNABERT-2 replaces k-mers with BPE |
+| `learning_rate` | 3e-5 | upstream finetune example |
+| `per_device_train_batch_size` | 8 | upstream finetune example |
+| `per_device_eval_batch_size` | 16 | upstream finetune example |
+| `gradient_accumulation_steps` | 1 | upstream finetune example |
+| `num_train_epochs` | 3 | this fork — LAMBDA wrapper (upstream example uses 5) |
+| `model_max_length` | 512 (2k) / 1024 (4k) | this fork — ~0.25 × bp length (BPE), per LAMBDA window |
+| `warmup_steps` | 50 | upstream finetune example |
+| `eval_steps` / `save_steps` | 200 | upstream finetune example |
+| `save_total_limit` | 1 | this fork |
+| `load_best_model_at_end` | True | this fork |
+| `metric_for_best_model` | `eval_loss` (per-seed checkpoint); cross-seed winner by test-set MCC | **LAMBDA-specific** (the LAMBDA paper reports MCC; `select_best_model.py` picks the best seed by `eval_matthews_correlation`) |
+| `fp16` | on (A100) | upstream finetune example |
+| `seed` | 1–5 (LAMBDA sweep); 42 otherwise | this fork / HF convention |
 
-- [1. Introduction](#1-introduction)
-- [2. Model and Data](#2-model-and-data)
-- [3. Setup Environment](#3-setup-environment)
-- [4. Quick Start](#4-quick-start)
-- [5. Pre-Training](#5-pre-training)
-- [6. Finetune](#6-finetune)
-- [7. Citation](#7-citation)
+DNABERT-2 has a single architecture, so the LAMBDA pipeline sweeps seeds and
+window lengths rather than architectures. Per-seed model selection uses the HF
+default `eval_loss`; the LAMBDA winner across seeds is chosen by test-set MCC in
+`select_best_model.py`. The upstream GUE scripts (`scripts/run_dnabert2.sh`,
+`run_dnabert1.sh`, `run_nt.sh`) are unchanged; use them for the original
+benchmark.
 
+## What this fork adds
 
+| File | Purpose |
+|------|---------|
+| `finetune/train.py` | Fine-tune a DNABERT-2 checkpoint on a binary CSV dataset (`train.csv` / `dev.csv` (or `val.csv`) / `test.csv` with `sequence,label` columns). Upstream's script; this fork adds the `val.csv` fallback. |
+| `finetune/inference_dnabert2.py` | Inference with a locally-stored fine-tuned checkpoint; writes per-class probabilities + predicted label, and an optional metrics JSON when labels are present. |
+| `finetune/embedding_analysis_dnabert2.py` | Extract pretrained embeddings; train a linear probe + 3-layer NN; compute silhouette score, PCA, and (optionally) a random-init baseline and embedding power. |
+| `finetune/scripts/analyze_genome_wide_results.py` | Threshold + clustering filter for genome-wide windowed predictions; per-genome and aggregate metrics. |
+| `finetune/scripts/analyze_phage_only_results.py` | FNR analysis over phage-only prediction CSVs. |
+| `finetune/scripts/check_embedding_sizes.py` | Sanity-check extracted embedding dimensions. |
+| `finetune/scripts/wrapper_run_embedding_analysis.sh` | SLURM submission wrapper for embedding analysis on a CSV directory. |
+| `finetune/scripts/wrapper_run_inference.sh` | SLURM submission wrapper for single embedding-head inference. |
+| `finetune/scripts/wrapper_run_batch_inference.sh` | SLURM submission wrapper for batch inference (one job per CSV in an `INPUT_LIST`). |
+| `finetune/scripts/lambda_replication/lambda_replication.conf` | Config file for the LAMBDA-replication pipeline. |
+| `finetune/scripts/lambda_replication/run_lambda_training.sh` | Submit all finetune jobs (seed × window). |
+| `finetune/scripts/lambda_replication/run_lambda_inference.sh` | Pick the best seed, then submit embedding analysis + all diagnostic and genome-wide inference. |
+| `finetune/scripts/lambda_replication/lambda_*_job.sh` | sbatch bodies for one finetune / embedding / inference / genome-analysis job. |
+| `finetune/scripts/lambda_replication/select_best_model.py` | Pick the best of N finetune seeds per variant by test-set MCC. |
+| `finetune/scripts/lambda_replication/print_winner_exports.py` | Emit shell exports for the winning checkpoint (read by the inference job). |
 
-## Update (2024/02/14)
+## Installation
 
-We publish DNABERT-S,  a foundation model based on DNABERT-2 specifically designed for generating DNA embedding that naturally clusters and segregates genome of different species in the embedding space. Please check it out [here](https://github.com/Zhihan1996/DNABERT_S) if you are interested.
+Create the conda env and install the pinned dependencies:
 
-
-
-## 1. Introduction
-
-DNABERT-2 is a foundation model trained on large-scale multi-species genome that achieves the state-of-the-art performance on $28$ tasks of the GUE benchmark. It replaces k-mer tokenization with BPE, positional embedding with Attention with Linear Bias (ALiBi), and incorporate other techniques to improve the efficiency and effectiveness of DNABERT.
-
-
-
-## 2. Model and Data
-
-The pre-trained models is available at Huggingface as `zhihan1996/DNABERT-2-117M`. [Link to HuggingFace ModelHub](https://huggingface.co/zhihan1996/DNABERT-2-117M). [Link For Direct Downloads]().
-
-
-
-### 2.1 GUE: Genome Understanding Evaluation
-
-GUE is a comprehensive benchmark for genome understanding consising of $28$ distinct datasets across $7$ tasks and $4$ species. GUE can be download [here]([https://drive.google.com/file/d/1GRtbzTe3UXYF1oW27ASNhYX3SZ16D7N2/view?usp=sharing](https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view?usp=sharing)). Statistics and model performances on GUE is shown as follows:
-
-
-
-![GUE](figures/GUE.png)
-
-
-
-![Performance](figures/Performance.png)
-
-
-
-## 3. Setup environment
-
-    # create and activate virtual python environment
-    conda create -n dna python=3.8
-    conda activate dna
-    
-    # (optional if you would like to use flash attention)
-    # install triton from source
-    git clone https://github.com/openai/triton.git;
-    cd triton/python;
-    pip install cmake; # build-time dependency
-    pip install -e .
-    
-    # install required packages
-    python3 -m pip install -r requirements.txt
-
-
-
-
-
-## 4. Quick Start
-
-Our model is easy to use with the [transformers](https://github.com/huggingface/transformers) package.
-
-
-To load the model from huggingface (version 4.28):
-```python
-import torch
-from transformers import AutoTokenizer, AutoModel
-
-tokenizer = AutoTokenizer.from_pretrained("zhihan1996/DNABERT-2-117M", trust_remote_code=True)
-model = AutoModel.from_pretrained("zhihan1996/DNABERT-2-117M", trust_remote_code=True)
+```bash
+conda create -n dna python=3.8
+conda activate dna
+pip install -r requirements.txt
 ```
 
-To load the model from huggingface (version > 4.28):
-```python
-from transformers.models.bert.configuration_bert import BertConfig
+For GPU training, install a CUDA-enabled PyTorch matching your toolkit:
 
-config = BertConfig.from_pretrained("zhihan1996/DNABERT-2-117M")
-model = AutoModel.from_pretrained("zhihan1996/DNABERT-2-117M", trust_remote_code=True, config=config)
+```bash
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
+<!-- TODO: confirm with LeAnn — the Biowulf `dna` env runs Python 3.10 with newer
+transformers/torch than the pins in requirements.txt (transformers 4.29.2,
+torch 1.13.1). Update requirements.txt or document the exact working pins. -->
 
-To calculate the embedding of a dna sequence
-```
-dna = "ACGTAGCATCGGATCTATCTATCGACACTTGGTTATCGATCTACGAGCATCTCGTTAGC"
-inputs = tokenizer(dna, return_tensors = 'pt')["input_ids"]
-hidden_states = model(inputs)[0] # [1, sequence_length, 768]
+The optional flash-attention path and the original environment notes are in
+[`UPSTREAM_README.md`](./UPSTREAM_README.md#3-setup-environment).
 
-# embedding with mean pooling
-embedding_mean = torch.mean(hidden_states[0], dim=0)
-print(embedding_mean.shape) # expect to be 768
+## Using the fork
 
-# embedding with max pooling
-embedding_max = torch.max(hidden_states[0], dim=0)[0]
-print(embedding_max.shape) # expect to be 768
-```
+Two supported workflows:
 
+| If you want to... | Go to |
+|---|---|
+| Use DNABERT-2 on **your own** binary classification CSV (finetune, evaluate embeddings, predict) | [Generic classification](#generic-classification) |
+| **Replicate** the LAMBDA phage paper — train all seeds per window, pick the best, run all diagnostic + genome-wide inference | [LAMBDA replication](#lambda-replication) |
 
+### Generic classification
 
-## 5. Pre-Training
+**Inputs:** a directory containing `train.csv`, `dev.csv` (or `val.csv`),
+`test.csv`. Each CSV must have a `sequence` column and a `label` column (0/1).
 
-We used and slightly modified the MosaicBERT implementation for DNABERT-2 https://github.com/mosaicml/examples/tree/main/examples/benchmarks/bert . You should be able to replicate the model training following the instructions.
+Three sub-steps, each a separate SLURM submission:
 
-Or you can use the run_mlm.py at https://github.com/huggingface/transformers/tree/main/examples/pytorch/language-modeling by importing the BertModelForMaskedLM from https://huggingface.co/zhihan1996/DNABERT-2-117M/blob/main/bert_layers.py. It should produce a very similar model.
+```bash
+# 1. Embedding analysis — linear probe + 3-layer NN on pretrained embeddings
+#    (edit the CSV_DIR / MODEL_PATH config block at the top, then run)
+bash finetune/scripts/wrapper_run_embedding_analysis.sh
 
-The training data is available [here](https://drive.google.com/file/d/1dSXJfwGpDSJ59ry9KAp8SugQLK35V83f/view?usp=sharing.). 
-
-
-
-
-
-## 6. Finetune
-
-### 6.1 Evaluate models on GUE
-Please first download the GUE dataset from [here](https://drive.google.com/file/d/1uOrwlf07qGQuruXqGXWMpPn8avBoW7T-/view?usp=sharing). Then run the scripts to evaluate on all the tasks. 
-
-Current script is set to use `DataParallel` for training on 4 GPUs. If you have different number of GPUs, please change the `per_device_train_batch_size` and `gradient_accumulation_steps` accordingly to adjust the global batch size to 32 to replicate the results in the paper. If you would like to perform distributed multi-gpu training (e.g., with `DistributedDataParallel`), simply change `python` to `torchrun --nproc_per_node ${n_gpu}`.
-
-
-```
-export DATA_PATH=/path/to/GUE #(e.g., /home/user)
+# 2. Fine-tuning — full encoder fine-tune (edit DATA_PATH / hyperparams)
 cd finetune
+python train.py --model_name_or_path zhihan1996/DNABERT-2-117M \
+    --data_path /path/to/csv_dir --kmer -1 --model_max_length 512 \
+    --per_device_train_batch_size 8 --learning_rate 3e-5 \
+    --num_train_epochs 3 --fp16 --output_dir output/run --save_model True
 
-# Evaluate DNABERT-2 on GUE
-sh scripts/run_dnabert2.sh DATA_PATH
-
-# Evaluate DNABERT (e.g., DNABERT with 3-mer) on GUE
-# 3 for 3-mer, 4 for 4-mer, 5 for 5-mer, 6 for 6-mer
-sh scripts/run_dnabert1.sh DATA_PATH 3
-
-# Evaluate Nucleotide Transformers on GUE
-# 0 for 500m-1000g, 1 for 500m-human-ref, 2 for 2.5b-1000g, 3 for 2.5b-multi-species
-sh scripts/run_nt.sh DATA_PATH 0
-
+# 3. Inference — predictions + metrics on a CSV (or a list of CSVs):
+bash finetune/scripts/wrapper_run_inference.sh         # single CSV
+bash finetune/scripts/wrapper_run_batch_inference.sh   # INPUT_LIST: one CSV path per line, one job each
 ```
 
-### 6.2 Fine-tune DNABERT2 on your own datasets
+`INPUT_LIST` in the batch-inference wrapper is a text file with one CSV path per
+line; one SLURM job per input.
 
-Here we provide an example of fine-tuning DNABERT2 on your own datasets.
+For the full flag list for any script, run `python <script>.py --help`.
 
+### LAMBDA replication
 
+A two-step workflow over a single config file. The pipeline loops over the
+LAMBDA_v1 segment lengths (**2k / 4k** — DNABERT-2 has no 8k context, so 8k is
+skipped automatically) and for each length submits: finetune × N seeds,
+best-seed selection (by test-set MCC), pretrained embedding analysis (linear
+probe + 3-layer NN, optional random baseline), inference on the matching-length
+diagnostic CSVs, and genome-wide inference + threshold/clustering summary.
 
-#### 6.2.1 Format your dataset
+```bash
+# 1. Edit the config — LAMBDA_BASE and OUTPUT_DIR are required;
+#    SEEDS, MAX_LENGTH_<LEN>, FNR_<LEN>, GENOME_WIDE_<LEN> are optional.
+$EDITOR finetune/scripts/lambda_replication/lambda_replication.conf
 
-First, please generate 3 `csv` files from your dataset: `train.csv`, `dev.csv`, and `test.csv`. In the training process, the model is trained on `train.csv` and is evaluated on the `dev.csv` file. After the training if finished, the checkpoint with the smallest loss on the `dev.csv `file is loaded and be evaluated on `test.csv`. If you do not have a validation set, please just make the `dev.csv` and `test.csv` the same. 
+# 2. Launch all training (finetune × N seeds per window, in parallel —
+#    no dependency chaining)
+bash finetune/scripts/lambda_replication/run_lambda_training.sh
 
+# 3. Wait — squeue -u $USER
 
-
-Please see the `sample_data` folder for an sample of data format. Each file should be in the same format, with the first row as document head named `sequence, label`. Each following row should contain a DNA sequence and a numerical label concatenated by a `,` (e.g., `ACGTCAGTCAGCGTACGT, 1 `).
-
-
-
-Then, you are able to finetune DNABERT-2 on your own dataset with the following code:
-
-
-
-```
-cd finetune
-
-export DATA_PATH=$path/to/data/folder  # e.g., ./sample_data
-export MAX_LENGTH=100 # Please set the number as 0.25 * your sequence length. 
-											# e.g., set it as 250 if your DNA sequences have 1000 nucleotide bases
-											# This is because the tokenized will reduce the sequence length by about 5 times
-export LR=3e-5
-
-# Training use DataParallel
-python train.py \
-    --model_name_or_path zhihan1996/DNABERT-2-117M \
-    --data_path  ${DATA_PATH} \
-    --kmer -1 \
-    --run_name DNABERT2_${DATA_PATH} \
-    --model_max_length ${MAX_LENGTH} \
-    --per_device_train_batch_size 8 \
-    --per_device_eval_batch_size 16 \
-    --gradient_accumulation_steps 1 \
-    --learning_rate ${LR} \
-    --num_train_epochs 5 \
-    --fp16 \
-    --save_steps 200 \
-    --output_dir output/dnabert2 \
-    --evaluation_strategy steps \
-    --eval_steps 200 \
-    --warmup_steps 50 \
-    --logging_steps 100 \
-    --overwrite_output_dir True \
-    --log_level info \
-    --find_unused_parameters False
-    
-# Training use DistributedDataParallel (more efficient)
-export num_gpu=4 # please change the value based on your setup
-
-torchrun --nproc_per_node=${num_gpu} train.py \
-    --model_name_or_path zhihan1996/DNABERT-2-117M \
-    --data_path  ${DATA_PATH} \
-    --kmer -1 \
-    --run_name DNABERT2_${DATA_PATH} \
-    --model_max_length ${MAX_LENGTH} \
-    --per_device_train_batch_size 8 \
-    --per_device_eval_batch_size 16 \
-    --gradient_accumulation_steps 1 \
-    --learning_rate ${LR} \
-    --num_train_epochs 5 \
-    --fp16 \
-    --save_steps 200 \
-    --output_dir output/dnabert2 \
-    --evaluation_strategy steps \
-    --eval_steps 200 \
-    --warmup_steps 50 \
-    --logging_steps 100 \
-    --overwrite_output_dir True \
-    --log_level info \
-    --find_unused_parameters False
+# 4. Launch all inference (per length: pick winner by test-MCC; run embedding
+#    analysis; run inference on test, fpr, gc_control, fnr; genome-wide + sweep)
+bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 ```
 
+One-time, before the first run: pre-warm the HuggingFace cache from a login node
+(the jobs run offline to avoid proxy 503s) — see the
+[lambda_replication README](./finetune/scripts/lambda_replication/README.md).
 
-
-
-
-
-
-
-## 7. Citation
-
-If you have any question regarding our paper or codes, please feel free to start an issue or email Zhihan Zhou (zhihanzhou2020@u.northwestern.edu).
-
-
-
-If you use DNABERT-2 in your work, please kindly cite our paper:
-
-**DNABERT-2**
+**Expected LAMBDA_v1 layout** (auto-derived from `LAMBDA_BASE`):
 
 ```
+LAMBDA_BASE/
+├── train_val_test/<LEN>/{train,val,test}.csv     finetune + embedding + test diagnostic
+├── fpr_test/<LEN>/bacteria_segments_<LEN>.csv    fpr diagnostic
+└── shuffled_controls/<LEN>/test_shuffled.csv     gc_control diagnostic
+```
+
+FNR and genome-wide inputs are not part of LAMBDA_v1; provide them via the
+optional `FNR_<LEN>` and `GENOME_WIDE_<LEN>` config variables
+(`GENOME_WIDE_<LEN>` can be a single CSV or a directory of CSVs — each becomes
+its own inference job).
+
+**Output layout:**
+
+```
+<OUTPUT_DIR>/
+├── <LEN>/                              one subdir per SEGMENT_LENGTHS entry (2k, 4k)
+│   ├── finetune/<variant>/seed-<N>/    test_results.json, saved model
+│   ├── embedding/<variant>/            embedding_analysis_results.json, .npz, classifiers
+│   ├── winners.json                    picked by run_lambda_inference.sh
+│   ├── inference/<variant>/            <dataset>_predictions.csv (+ _metrics.json)
+│   └── genome_wide_analysis/<variant>/ threshold + clustering summary CSVs
+└── logs/                               SLURM stdout/stderr per job (shared)
+```
+
+## Available models
+
+| Model | Parameters | Tokenizer | Context | HuggingFace |
+| --- | --- | --- | --- | --- |
+| DNABERT-2-117M | 117M | BPE | ALiBi (no fixed max; LAMBDA uses 512 / 1024 tokens for 2k / 4k) | [zhihan1996/DNABERT-2-117M](https://huggingface.co/zhihan1996/DNABERT-2-117M) |
+
+## Citation
+
+If you use DNABERT-2 itself, cite the original paper:
+
+```bibtex
 @misc{zhou2023dnabert2,
-      title={DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome}, 
+      title={DNABERT-2: Efficient Foundation Model and Benchmark For Multi-Species Genome},
       author={Zhihan Zhou and Yanrong Ji and Weijian Li and Pratik Dutta and Ramana Davuluri and Han Liu},
       year={2023},
       eprint={2306.15006},
@@ -254,22 +200,15 @@ If you use DNABERT-2 in your work, please kindly cite our paper:
 }
 ```
 
-**DNABERT**
+If you use this fork as part of the LAMBDA prophage-detection benchmark, also
+cite the LAMBDA paper:
 
-```
-@article{ji2021dnabert,
-    author = {Ji, Yanrong and Zhou, Zhihan and Liu, Han and Davuluri, Ramana V},
-    title = "{DNABERT: pre-trained Bidirectional Encoder Representations from Transformers model for DNA-language in genome}",
-    journal = {Bioinformatics},
-    volume = {37},
-    number = {15},
-    pages = {2112-2120},
-    year = {2021},
-    month = {02},
-    issn = {1367-4803},
-    doi = {10.1093/bioinformatics/btab083},
-    url = {https://doi.org/10.1093/bioinformatics/btab083},
-    eprint = {https://academic.oup.com/bioinformatics/article-pdf/37/15/2112/50578892/btab083.pdf},
+```bibtex
+@article{LAMBDA2026,
+  author  = {Lindsey, LeAnn M. and Pershing, Nicole L. and Dufault-Thompson, Keith and Gwak, Ho-jin and Habib, Anisa and Schindler, Aaron and Rakheja, Arjun and Round, June and Stephens, W. Zac and Blaschke, Anne J. and Sundar, Hari and Jiang, Xiaofang},
+  title   = {{LAMBDA}: A Prophage Detection Benchmark for Genomic Language Models},
+  year    = {2026},
+  doi     = {10.64898/2026.03.26.714501},
+  url     = {https://doi.org/10.64898/2026.03.26.714501}
 }
 ```
-

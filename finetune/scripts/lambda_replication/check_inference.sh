@@ -1,0 +1,166 @@
+#!/bin/bash
+#
+# DNABERT-2 LAMBDA replication — check that all STAGE 2 inference jobs finished.
+#
+# Reads the same lambda_replication.conf as the launcher, then for every
+# (length, variant) reports the outputs run_lambda_inference.sh should produce:
+#   WINNER     winners.json lists this variant (best seed picked)
+#   EMBED      embedding/<variant>/embedding_analysis_results.json present (Surface D)
+#   <diag>     inference/<variant>/<diag>_predictions.csv (+ _metrics.json),
+#              for test / fpr / gc_control / fnr (fnr only if FNR_<LEN> is set),
+#              with accuracy & mcc straight from the metrics JSON
+#   GENOME     genome_wide_*_predictions.csv count vs CSVs in GENOME_WIDE_<LEN>,
+#              and whether genome_wide_analysis/<variant>/ has summary CSVs
+# then lists any non-empty .err files from inference/embedding/genome jobs.
+#
+# Usage:
+#   bash finetune/scripts/lambda_replication/check_inference.sh
+#
+# Run this after run_lambda_inference.sh and squeue shows the jobs done.
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CONFIG="${SCRIPT_DIR}/lambda_replication.conf"
+
+if [ ! -f "${CONFIG}" ]; then
+    echo "ERROR: missing ${CONFIG}"; exit 1
+fi
+# shellcheck disable=SC1090
+source "${CONFIG}"
+
+if [ -z "${OUTPUT_DIR}" ]; then
+    echo "ERROR: OUTPUT_DIR is empty (check ${CONFIG})"; exit 1
+fi
+if [ ! -d "${OUTPUT_DIR}" ]; then
+    echo "ERROR: OUTPUT_DIR not found: ${OUTPUT_DIR}"; exit 1
+fi
+
+# DNABERT-2 supports 2k/4k only — mirror the launcher and drop any 8k entry.
+RUN_LENGTHS=""
+for LEN in ${SEGMENT_LENGTHS}; do
+    [ "${LEN}" = "8k" ] && continue
+    RUN_LENGTHS="${RUN_LENGTHS} ${LEN}"
+done
+RUN_LENGTHS="$(echo "${RUN_LENGTHS}" | xargs)"
+
+LOGDIR="${OUTPUT_DIR}/logs"
+
+# Print "accuracy / mcc" from an inference metrics JSON, or a dash if absent.
+metrics_line() {
+    python - "$1" 2>/dev/null <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    acc = d.get("accuracy"); mcc = d.get("mcc")
+    fa = f"{acc:.4f}" if isinstance(acc, (int, float)) else "?"
+    fm = f"{mcc:.4f}" if isinstance(mcc, (int, float)) else "?"
+    print(f"acc={fa} mcc={fm}")
+except Exception:
+    print("-")
+PY
+}
+
+echo "============================================================"
+echo "DNABERT-2 LAMBDA replication — inference check"
+echo "============================================================"
+echo "  OUTPUT_DIR:      ${OUTPUT_DIR}"
+echo "  SEGMENT_LENGTHS: ${RUN_LENGTHS}"
+echo "  VARIANTS:        ${VARIANTS}"
+echo "============================================================"
+
+for LEN in ${RUN_LENGTHS}; do
+    REPL_LEN_DIR="${OUTPUT_DIR}/${LEN}"
+    WINNERS_JSON="${REPL_LEN_DIR}/winners.json"
+
+    # diagnostics expected for this length: fnr only if FNR_<LEN> is set.
+    DIAGS="test fpr gc_control"
+    fnr_var="FNR_${LEN}"
+    [ -n "${!fnr_var:-}" ] && DIAGS="${DIAGS} fnr"
+
+    # genome-wide: how many CSVs did we point at?
+    gw_var="GENOME_WIDE_${LEN}"
+    GW_PATH="${!gw_var:-}"
+    GW_EXPECTED=0
+    if [ -n "${GW_PATH}" ]; then
+        if [ -f "${GW_PATH}" ]; then
+            GW_EXPECTED=1
+        elif [ -d "${GW_PATH}" ]; then
+            shopt -s nullglob
+            gw_files=("${GW_PATH}"/*.csv)
+            shopt -u nullglob
+            GW_EXPECTED="${#gw_files[@]}"
+        fi
+    fi
+
+    echo ""
+    echo "######## length: ${LEN} ########"
+    if [ -f "${WINNERS_JSON}" ]; then
+        HAVE_VARIANTS=$(python -c "import json;print(' '.join(json.load(open('${WINNERS_JSON}')).keys()))" 2>/dev/null)
+    else
+        HAVE_VARIANTS=""
+        echo "  WARNING: winners.json MISSING — run_lambda_inference.sh may not have run"
+    fi
+
+    for VARIANT in ${VARIANTS}; do
+        echo ""
+        echo "  --- variant: ${VARIANT} ---"
+        INF_DIR="${REPL_LEN_DIR}/inference/${VARIANT}"
+        EMB_DIR="${REPL_LEN_DIR}/embedding/${VARIANT}"
+
+        # winner?
+        if [[ " ${HAVE_VARIANTS} " == *" ${VARIANT} "* ]]; then
+            echo "    WINNER   ok"
+        else
+            echo "    WINNER   MISSING (no winning seed — predictions skipped)"
+        fi
+
+        # embedding (Surface D)
+        if [ -f "${EMB_DIR}/embedding_analysis_results.json" ]; then
+            echo "    EMBED    ok"
+        else
+            echo "    EMBED    MISSING"
+        fi
+
+        # diagnostics
+        for NAME in ${DIAGS}; do
+            CSV="${INF_DIR}/${NAME}_predictions.csv"
+            MJSON="${INF_DIR}/${NAME}_predictions_metrics.json"
+            if [ -f "${CSV}" ]; then
+                if [ -f "${MJSON}" ]; then
+                    printf "    %-10s ok   %s\n" "${NAME}" "$(metrics_line "${MJSON}")"
+                else
+                    printf "    %-10s ok   (no _metrics.json — labels absent?)\n" "${NAME}"
+                fi
+            else
+                printf "    %-10s MISSING\n" "${NAME}"
+            fi
+        done
+
+        # genome-wide
+        if [ "${GW_EXPECTED}" -gt 0 ]; then
+            shopt -s nullglob
+            gw_pred=("${INF_DIR}"/genome_wide_*_predictions.csv)
+            shopt -u nullglob
+            GW_GOT="${#gw_pred[@]}"
+            ANA_DIR="${REPL_LEN_DIR}/genome_wide_analysis/${VARIANT}"
+            shopt -s nullglob
+            ana_csv=("${ANA_DIR}"/*.csv)
+            shopt -u nullglob
+            if [ "${GW_GOT}" -eq "${GW_EXPECTED}" ]; then
+                GWS=ok
+            else
+                GWS="INCOMPLETE"
+            fi
+            printf "    %-10s %s  predictions=%s/%s  analysis_csvs=%s\n" \
+                "genome" "${GWS}" "${GW_GOT}" "${GW_EXPECTED}" "${#ana_csv[@]}"
+        fi
+    done
+done
+
+echo ""
+echo "=== non-empty .err files (potential failures) ==="
+ERRS=$(find "${LOGDIR}" \( -name "inf_*.err" -o -name "gwinf_*.err" -o -name "emb_*.err" -o -name "gwana_*.err" \) -size +0c -printf "%s  %p\n" 2>/dev/null | sort -rn)
+if [ -n "${ERRS}" ]; then
+    echo "${ERRS}"
+else
+    echo "  (none)"
+fi

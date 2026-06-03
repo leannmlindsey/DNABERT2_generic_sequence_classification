@@ -20,11 +20,15 @@
 echo "=== finetune ${VARIANT} seed=${SEED} len=${LEN:-?} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-# Activate conda (module load conda; source activate dna).
-module load conda
+# Activate conda (source conda.sh; conda activate dna).
 module load CUDA/12.8
-source activate "${CONDA_ENV:-dna}"
-echo "  conda env: ${CONDA_DEFAULT_ENV:-<none>}   python: $(command -v python || echo none)"
+source /data/lindseylm/conda/etc/profile.d/conda.sh
+conda activate "${CONDA_ENV:-dna}"
+if [ "${CONDA_DEFAULT_ENV}" != "${CONDA_ENV:-dna}" ]; then
+    echo "ERROR: could not activate conda env '${CONDA_ENV:-dna}' (active: '${CONDA_DEFAULT_ENV:-none}'). Aborting." >&2
+    exit 1
+fi
+echo "  conda env: ${CONDA_DEFAULT_ENV}   python: $(command -v python)"
 export PYTHONNOUSERSITE=1
 
 # Stay offline so the Biowulf HTTPS proxy can't 503 us mid-run. Cache must be

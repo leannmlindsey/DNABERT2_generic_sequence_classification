@@ -31,7 +31,7 @@ LAMBDA-specific values and pass every flag through so they can be overridden:
 | `eval_steps` / `save_steps` | 200 | upstream finetune example |
 | `save_total_limit` | 1 | this fork |
 | `load_best_model_at_end` | True | this fork |
-| `metric_for_best_model` | `eval_loss` (per-seed checkpoint); cross-seed winner by test-set MCC | **LAMBDA-specific** (the LAMBDA paper reports MCC; `select_best_model.py` picks the best seed by `eval_matthews_correlation`) |
+| `metric_for_best_model` | `eval_loss` | upstream HF default for per-seed checkpoint selection (the cross-seed LAMBDA winner is chosen downstream by test-set MCC — see below) |
 | `fp16` | on (A100) | upstream finetune example |
 | `seed` | 1–5 (LAMBDA sweep); 42 otherwise | this fork / HF convention |
 

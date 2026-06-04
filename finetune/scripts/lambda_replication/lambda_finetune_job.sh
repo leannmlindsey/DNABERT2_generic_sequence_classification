@@ -37,9 +37,8 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_HOME=/data/lindseylm/.cache/huggingface
 
-# REPO_ROOT is supplied by the launcher via --export. SLURM stages this script
-# to /var/spool/slurm/... so BASH_SOURCE[0] would not resolve to the real repo;
-# never compute REPO_ROOT from the script's own location.
+# REPO_ROOT is supplied by the launcher via --export (the batch script is staged
+# to the SLURM spool dir, so its own path can't be used to find the repo).
 if [ -z "${REPO_ROOT:-}" ]; then
     echo "ERROR: REPO_ROOT is not set; the launcher must pass it via --export"; exit 1
 fi

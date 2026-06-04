@@ -13,7 +13,9 @@
 # Usage:
 #   bash finetune/scripts/lambda_replication/prefetch_hf_cache.sh
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Absolute path to this lambda_replication dir on Biowulf (hardcoded so it is
+# correct no matter what directory the script is launched/submitted from).
+SCRIPT_DIR="/vf/users/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/finetune/scripts/lambda_replication"
 source "${SCRIPT_DIR}/lambda_replication.conf"
 
 source /data/lindseylm/conda/etc/profile.d/conda.sh

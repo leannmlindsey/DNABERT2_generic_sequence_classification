@@ -201,6 +201,19 @@ bash finetune/scripts/lambda_replication/run_lambda_training.sh
 bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 ```
 
+After each stage, verify completeness with the bundled checkers:
+
+```bash
+bash finetune/scripts/lambda_replication/check_training.sh         # test_results.json per seed
+bash finetune/scripts/lambda_replication/check_inference.sh        # winners, diagnostics, genome counts
+bash finetune/scripts/lambda_replication/check_random_baseline.sh  # random arm actually ran (per length)
+```
+
+`check_random_baseline.sh` confirms each embedding cell produced **both**
+`embeddings_random.npz` **and** the `random_baseline_linear` / `random_baseline_nn`
+MCC keys (not just that `INCLUDE_RANDOM_BASELINE=true`), and prints pretrained vs
+random MCC + embedding power per length — random should sit well below pretrained.
+
 One-time, before the first run: pre-warm the HuggingFace cache from a login node
 (the jobs run offline to avoid proxy 503s) — see the
 [lambda_replication README](./finetune/scripts/lambda_replication/README.md).

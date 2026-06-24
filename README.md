@@ -64,11 +64,13 @@ benchmark.
 
 ## Installation
 
+### Biowulf / x86 + A100 (the pinned recipe)
+
 Create the conda env and install the pinned dependencies:
 
 ```bash
-conda create -n dna python=3.8
-conda activate dna
+conda create -n dnabert2_env python=3.8
+conda activate dnabert2_env
 pip install -r requirements.txt
 ```
 
@@ -78,9 +80,25 @@ For GPU training, install a CUDA-enabled PyTorch matching your toolkit:
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
-<!-- TODO: confirm with LeAnn — the Biowulf `dna` env runs Python 3.10 with newer
-transformers/torch than the pins in requirements.txt (transformers 4.29.2,
-torch 1.13.1). Update requirements.txt or document the exact working pins. -->
+### Delta-AI / NCSA (GH200, aarch64)
+
+The pins above **do not** work on a GH200: it is aarch64 + Hopper (sm_90), and
+neither Python 3.8 nor `torch==1.13.1` has an aarch64 CUDA wheel. Use Python 3.11
+and a modern CUDA torch instead (confirmed 2026-06-24 on a GH200 node):
+
+```bash
+conda create -y -p /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env python=3.11
+conda activate /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env
+pip install --no-cache-dir torch          # -> torch 2.12.1+cu130 on py3.11 aarch64
+pip install --no-cache-dir -r requirements-delta.txt
+# verify CUDA is live before training:
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+See [`requirements-delta.txt`](./requirements-delta.txt) for the full rationale and
+the pinned/unpinned split. The LAMBDA replication driver/job scripts under
+`finetune/scripts/lambda_replication/` are already pointed at Delta paths and
+`ghx4` / `bfzj-dtai-gh`.
 
 The optional flash-attention path and the original environment notes are in
 [`UPSTREAM_README.md`](./UPSTREAM_README.md#3-setup-environment).

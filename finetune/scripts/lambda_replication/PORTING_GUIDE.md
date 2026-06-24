@@ -166,7 +166,7 @@ and change only the following:
   `EVAL_STEPS`, etc.) → the model's documented finetune recipe.
 - Diagnostic paths `FNR_<W>` / `GENOME_WIDE_<W>` → the LAMBDA_v1 paths in §3
   (same `LAMBDA_BASE`, so portable across model repos verbatim).
-- `CONDA_ENV` → the model's env (DNABERT-2 = `dna`; GENA-LM = `gena_lm`).
+- `CONDA_ENV` → the model's env (DNABERT-2 = `dnabert2_env`; GENA-LM = `gena_lm`).
 - `HF_HOME` → `/data/lindseylm/.cache/huggingface`.
 
 ### 4b. Job scripts (`lambda_*_job.sh`)

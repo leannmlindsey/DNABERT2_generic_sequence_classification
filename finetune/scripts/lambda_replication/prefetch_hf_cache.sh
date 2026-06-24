@@ -13,15 +13,18 @@
 # Usage:
 #   bash finetune/scripts/lambda_replication/prefetch_hf_cache.sh
 
-# Absolute path to this lambda_replication dir on Biowulf (hardcoded so it is
-# correct no matter what directory the script is launched/submitted from).
-SCRIPT_DIR="/vf/users/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/finetune/scripts/lambda_replication"
+# This lambda_replication dir. Runs on a login node (not SLURM-staged), so
+# deriving from BASH_SOURCE is safe and avoids a hardcoded path that drifts.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lambda_replication.conf"
 
-source /data/lindseylm/conda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV}"
+# BIOWULF ONLY (disabled for Delta): activate the conda env on the login node
+# BEFORE running this script; it then runs in your already-active env. Re-enable
+# on a cluster that does not inherit your shell environment.
+# source /u/llindsey1/miniconda3/etc/profile.d/conda.sh
+# conda activate "${CONDA_ENV}"
 
-export HF_HOME="${HF_HOME:-/data/lindseylm/.cache/huggingface}"
+export HF_HOME="${HF_HOME:-/work/hdd/bfzj/llindsey1/LAMBDA_REPLICATION/hf_cache}"
 unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE     # must be ONLINE to download
 
 echo "Prefetching files for '${BASE_MODEL}' (revision='${HF_REVISION:-main}')"

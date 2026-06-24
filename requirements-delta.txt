@@ -1,0 +1,32 @@
+# DNABERT-2 LAMBDA replication — Delta-AI (NCSA) install, GH200 / aarch64.
+#
+# WHY THIS FILE EXISTS: the main requirements.txt targets Biowulf x86 (Python 3.8,
+# torch==1.13.1). Neither installs on a GH200: it is aarch64 + Hopper (sm_90), and
+#   - PyTorch dropped Python 3.8 after torch 2.4.1, and
+#   - aarch64 CUDA wheels only exist for Python >= 3.9 (3.10+ in practice), and
+#   - torch 1.13.1 has no aarch64 CUDA wheel at all and no sm_90 support.
+# So Delta-AI needs Python 3.11 and a modern CUDA torch.
+#
+# BUILD (confirmed working 2026-06-24 on a GH200 node; driver 590.48.01 / CUDA 13.1):
+#   conda create -y -p /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env python=3.11
+#   conda activate /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env
+#   pip install --no-cache-dir torch          # -> torch 2.12.1+cu130 (cuda 13.0, is_available True)
+#   pip install --no-cache-dir -r requirements-delta.txt
+#
+# torch is installed SEPARATELY (line above), not pinned here, because the correct
+# wheel is architecture/CUDA-specific (plain `pip install torch` resolves to the
+# aarch64 CUDA build on Python 3.11). Verify before training:
+#   python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+#
+# transformers/peft/accelerate are kept at the repo's original pins (DNABERT-2's
+# remote model code expects this API); numpy/scikit-learn/einops/omegaconf/evaluate
+# are left unpinned so pip picks py3.11/aarch64 wheels instead of building old ones.
+
+transformers==4.29.2
+peft==0.3.0
+accelerate==0.20.3
+numpy
+scikit-learn
+einops
+omegaconf
+evaluate

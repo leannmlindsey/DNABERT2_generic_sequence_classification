@@ -2,6 +2,12 @@
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
 #
+# DEPRECATED / NOT USED in the Delta-AI pipeline. run_lambda_inference.sh no
+# longer submits this job: genome-wide inference now emits canonical
+# genome_wide_<stem>_predictions.csv files and the central harvest does any
+# threshold/clustering. (Delta-AI also has no CPU partition for a CPU-only job.)
+# Kept for reference / Biowulf use; its conda + module block below is Biowulf-only.
+#
 # Genome-wide threshold + clustering summary for ONE variant. Runs after all
 # genome-wide inference jobs for that variant have written
 # genome_wide_<asm>_predictions.csv (+ _metrics.json) into inference/<variant>/.
@@ -15,17 +21,17 @@
 # Required env:
 #   REPO_ROOT, REPL_OUTPUT_DIR, VARIANT
 # Optional env:
-#   MERGE_GAP (5000), MIN_CLUSTER_SIZE (5000), SMOOTH_WINDOW (5), CONDA_ENV (dna)
+#   MERGE_GAP (5000), MIN_CLUSTER_SIZE (5000), SMOOTH_WINDOW (5), CONDA_ENV (dnabert2_env)
 
 
 echo "=== genome analysis ${VARIANT} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-# Activate conda (source conda.sh; conda activate dna). CPU-only: no CUDA module.
+# Activate conda (source conda.sh; conda activate dnabert2_env). CPU-only: no CUDA module.
 source /data/lindseylm/conda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV:-dna}"
-if [ "${CONDA_DEFAULT_ENV}" != "${CONDA_ENV:-dna}" ]; then
-    echo "ERROR: could not activate conda env '${CONDA_ENV:-dna}' (active: '${CONDA_DEFAULT_ENV:-none}'). Aborting." >&2
+conda activate "${CONDA_ENV:-dnabert2_env}"
+if [ "${CONDA_DEFAULT_ENV}" != "${CONDA_ENV:-dnabert2_env}" ]; then
+    echo "ERROR: could not activate conda env '${CONDA_ENV:-dnabert2_env}' (active: '${CONDA_DEFAULT_ENV:-none}'). Aborting." >&2
     exit 1
 fi
 echo "  conda env: ${CONDA_DEFAULT_ENV}   python: $(command -v python)"

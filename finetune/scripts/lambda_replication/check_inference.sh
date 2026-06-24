@@ -9,8 +9,8 @@
 #   <diag>     inference/<variant>/<diag>_predictions.csv (+ _metrics.json),
 #              for test / fpr / gc_control / fnr (fnr only if FNR_<LEN> is set),
 #              with accuracy & mcc straight from the metrics JSON
-#   GENOME     genome_wide_*_predictions.csv count vs CSVs in GENOME_WIDE_<LEN>,
-#              and whether genome_wide_analysis/<variant>/ has summary CSVs
+#   GENOME     genome_wide_*_predictions.csv count vs CSVs in GENOME_WIDE_<LEN>
+#              (no aggregate analysis job on Delta — the harvest clusters centrally)
 # then lists any non-empty .err files from inference/embedding/genome jobs.
 #
 # Usage:
@@ -18,9 +18,8 @@
 #
 # Run this after run_lambda_inference.sh and squeue shows the jobs done.
 
-# Absolute path to this lambda_replication dir on Biowulf (hardcoded so it is
-# correct no matter what directory the script is launched/submitted from).
-SCRIPT_DIR="/vf/users/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/finetune/scripts/lambda_replication"
+# This lambda_replication dir, derived from BASH_SOURCE (runs on a login node).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${SCRIPT_DIR}/lambda_replication.conf"
 
 if [ ! -f "${CONFIG}" ]; then
@@ -137,30 +136,26 @@ for LEN in ${RUN_LENGTHS}; do
             fi
         done
 
-        # genome-wide
+        # genome-wide (predictions only; clustering is done centrally by harvest)
         if [ "${GW_EXPECTED}" -gt 0 ]; then
             shopt -s nullglob
             gw_pred=("${INF_DIR}"/genome_wide_*_predictions.csv)
             shopt -u nullglob
             GW_GOT="${#gw_pred[@]}"
-            ANA_DIR="${REPL_LEN_DIR}/genome_wide_analysis/${VARIANT}"
-            shopt -s nullglob
-            ana_csv=("${ANA_DIR}"/*.csv)
-            shopt -u nullglob
             if [ "${GW_GOT}" -eq "${GW_EXPECTED}" ]; then
                 GWS=ok
             else
                 GWS="INCOMPLETE"
             fi
-            printf "    %-10s %s  predictions=%s/%s  analysis_csvs=%s\n" \
-                "genome" "${GWS}" "${GW_GOT}" "${GW_EXPECTED}" "${#ana_csv[@]}"
+            printf "    %-10s %s  predictions=%s/%s\n" \
+                "genome" "${GWS}" "${GW_GOT}" "${GW_EXPECTED}"
         fi
     done
 done
 
 echo ""
 echo "=== non-empty .err files (potential failures) ==="
-ERRS=$(find "${LOGDIR}" \( -name "inf_*.err" -o -name "gwinf_*.err" -o -name "emb_*.err" -o -name "gwana_*.err" \) -size +0c -printf "%s  %p\n" 2>/dev/null | sort -rn)
+ERRS=$(find "${LOGDIR}" \( -name "inf_*.err" -o -name "gwinf_*.err" -o -name "emb_*.err" \) -size +0c -printf "%s  %p\n" 2>/dev/null | sort -rn)
 if [ -n "${ERRS}" ]; then
     echo "${ERRS}"
 else

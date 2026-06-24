@@ -13,8 +13,8 @@
 #        - gc_control shuffled_controls/<LEN>/test_shuffled.csv  (Surface B)
 #        - fnr        FNR_<LEN> if set                           (Surface B, optional)
 #   4. If GENOME_WIDE_<LEN> is set, submit one genome-wide inference job per CSV
-#      per variant (Surface C), then chain ONE genome-wide analysis job per
-#      (length, variant) that depends on all of them.
+#      per variant (Surface C), each emitting genome_wide_<stem>_predictions.csv.
+#      No aggregate analysis job — the central harvest does any clustering.
 #
 # Re-running is safe: each inference job overwrites its own predictions CSV.
 #
@@ -22,9 +22,9 @@
 #   bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 
 
-# Absolute path to this lambda_replication dir on Biowulf (hardcoded so it is
-# correct no matter what directory the script is launched/submitted from).
-SCRIPT_DIR="/vf/users/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/finetune/scripts/lambda_replication"
+# This lambda_replication dir. The driver runs on a login node (not SLURM-staged),
+# so deriving from BASH_SOURCE is safe and avoids a hardcoded path that drifts.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"
 CONFIG="${SCRIPT_DIR}/lambda_replication.conf"
 
@@ -71,11 +71,10 @@ done
 
 # --- common sbatch flags ------------------------------------------------------
 
-INF_FLAGS=(--partition=gpu --gres=gpu:a100:1 --mem="${INF_MEM}" --time="${INF_TIME}" --cpus-per-task=8)
-EMB_FLAGS=(--partition=gpu --gres=gpu:a100:1 --mem="${EMB_MEM}" --time="${EMB_TIME}" --cpus-per-task=8)
-GA_FLAGS=(--partition="${GA_PARTITION}" --mem="${GA_MEM}" --time="${GA_TIME}" --cpus-per-task=4)
+INF_FLAGS=(--account=bfzj-dtai-gh --partition=ghx4 --gpus-per-node=1 --mem="${INF_MEM}" --time="${INF_TIME}" --cpus-per-task=8)
+EMB_FLAGS=(--account=bfzj-dtai-gh --partition=ghx4 --gpus-per-node=1 --mem="${EMB_MEM}" --time="${EMB_TIME}" --cpus-per-task=8)
 
-EMB_ENV_BASE="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},BASE_MODEL=${BASE_MODEL},POOLING=${POOLING},EMB_SEED=${EMB_SEED},NN_EPOCHS=${NN_EPOCHS},NN_LR=${NN_LR},BATCH_SIZE=${INF_BATCH_SIZE},INCLUDE_RANDOM_BASELINE=${INCLUDE_RANDOM_BASELINE:-false}"
+EMB_ENV_BASE="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},HF_HOME=${HF_HOME},BASE_MODEL=${BASE_MODEL},POOLING=${POOLING},EMB_SEED=${EMB_SEED},NN_EPOCHS=${NN_EPOCHS},NN_LR=${NN_LR},BATCH_SIZE=${INF_BATCH_SIZE},INCLUDE_RANDOM_BASELINE=${INCLUDE_RANDOM_BASELINE:-false}"
 
 echo "============================================================"
 echo "DNABERT-2 LAMBDA replication — Stage 2: winners + inference"
@@ -183,7 +182,7 @@ for LEN in ${RUN_LENGTHS}; do
             continue
         fi
 
-        INF_ENV="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},REPL_OUTPUT_DIR=${REPL_LEN_DIR},VARIANT=${VARIANT},MAX_LENGTH=${MAX_LENGTH},BATCH_SIZE=${INF_BATCH_SIZE}"
+        INF_ENV="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},HF_HOME=${HF_HOME},REPL_OUTPUT_DIR=${REPL_LEN_DIR},VARIANT=${VARIANT},MAX_LENGTH=${MAX_LENGTH},BATCH_SIZE=${INF_BATCH_SIZE}"
 
         # Diagnostic inference (Surfaces A + B)
         for i in "${!DIAG_NAMES[@]}"; do
@@ -201,37 +200,24 @@ for LEN in ${RUN_LENGTHS}; do
             NUM_JOBS=$((NUM_JOBS + 1))
         done
 
-        # Genome-wide inference (Surface C) — one job per CSV, then one analysis
-        # job that waits for all of them.
+        # Genome-wide inference (Surface C) — one job per CSV, canonical
+        # genome_wide_<stem>_predictions.csv name. No aggregate analysis job:
+        # the central harvest does any clustering (and Delta-AI has no CPU
+        # partition for it), so these jobs are independent (no afterok chain).
         if [ "${#GW_CSVS[@]}" -gt 0 ]; then
-            GW_IDS=()
             for csv in "${GW_CSVS[@]}"; do
                 stem=$(basename "${csv}" .csv)
                 JOB="gwinf_${LEN}_${VARIANT}_${stem}"
-                echo "    submitting ${JOB}..."
-                jid=$(sbatch --parsable \
+                echo "    submitting ${JOB} -> genome_wide_${stem}_predictions.csv ..."
+                sbatch \
                     --job-name="${JOB}" \
                     --output="${LOGDIR}/${JOB}_%j.out" \
                     --error="${LOGDIR}/${JOB}_%j.err" \
                     "${INF_FLAGS[@]}" \
                     --export="ALL,${INF_ENV},INPUT_CSV=${csv},OUTPUT_FILENAME=genome_wide_${stem}_predictions.csv" \
-                    "${SCRIPT_DIR}/lambda_inference_job.sh")
-                GW_IDS+=("${jid}")
+                    "${SCRIPT_DIR}/lambda_inference_job.sh"
                 NUM_JOBS=$((NUM_JOBS + 1))
             done
-
-            DEP="afterok:$(IFS=:; echo "${GW_IDS[*]}")"
-            GA_JOB="gwana_${LEN}_${VARIANT}"
-            echo "    submitting ${GA_JOB} (depends on ${#GW_IDS[@]} job(s))..."
-            sbatch \
-                --job-name="${GA_JOB}" \
-                --output="${LOGDIR}/${GA_JOB}_%j.out" \
-                --error="${LOGDIR}/${GA_JOB}_%j.err" \
-                "${GA_FLAGS[@]}" \
-                --dependency="${DEP}" \
-                --export="ALL,REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},REPL_OUTPUT_DIR=${REPL_LEN_DIR},VARIANT=${VARIANT}" \
-                "${SCRIPT_DIR}/lambda_genome_analysis_job.sh"
-            NUM_JOBS=$((NUM_JOBS + 1))
         fi
     done
 
@@ -240,4 +226,4 @@ done
 
 echo ""
 echo "Submitted ${NUM_JOBS} jobs. Monitor with: squeue -u \$USER"
-echo "Results: ${OUTPUT_DIR}/<LEN>/inference/, embedding/, genome_wide_analysis/"
+echo "Results: ${OUTPUT_DIR}/<LEN>/inference/, embedding/"

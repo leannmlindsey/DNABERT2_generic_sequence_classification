@@ -16,9 +16,9 @@
 #   4. bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 
 
-# Absolute path to this lambda_replication dir on Biowulf (hardcoded so it is
-# correct no matter what directory the script is launched/submitted from).
-SCRIPT_DIR="/vf/users/lindseylm/GLM_EVALUATIONS/NAR_GENOMICS_LAMBDA_REPO/DNABERT2_generic_sequence_classification/finetune/scripts/lambda_replication"
+# This lambda_replication dir. The driver runs on a login node (not SLURM-staged),
+# so deriving from BASH_SOURCE is safe and avoids a hardcoded path that drifts.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # REPO_ROOT is the finetune/ dir (holds train.py, inference_dnabert2.py,
 # embedding_analysis_dnabert2.py, scripts/analyze_genome_wide_results.py).
 REPO_ROOT="$( cd "${SCRIPT_DIR}/../.." && pwd )"
@@ -90,12 +90,12 @@ echo "============================================================"
 
 # --- common sbatch flags ------------------------------------------------------
 
-FT_FLAGS=(--partition=gpu --gres=gpu:a100:1 --mem="${FT_MEM}" --time="${FT_TIME}" --cpus-per-task=8)
+FT_FLAGS=(--account=bfzj-dtai-gh --partition=ghx4 --gpus-per-node=1 --mem="${FT_MEM}" --time="${FT_TIME}" --cpus-per-task=8)
 
 # REPO_ROOT is propagated to every job so they can cd to the real repo — SLURM
 # stages each job script to /var/spool/slurm/... where BASH_SOURCE[0] can't
 # recover the original location.
-FT_ENV_BASE="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},BASE_MODEL=${BASE_MODEL},LR=${LR},BATCH_SIZE=${BATCH_SIZE},EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE},NUM_EPOCHS=${NUM_EPOCHS},USE_FP16=${USE_FP16}"
+FT_ENV_BASE="REPO_ROOT=${REPO_ROOT},CONDA_ENV=${CONDA_ENV},HF_HOME=${HF_HOME},BASE_MODEL=${BASE_MODEL},LR=${LR},BATCH_SIZE=${BATCH_SIZE},EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE},NUM_EPOCHS=${NUM_EPOCHS},USE_FP16=${USE_FP16}"
 
 NUM_JOBS=0
 

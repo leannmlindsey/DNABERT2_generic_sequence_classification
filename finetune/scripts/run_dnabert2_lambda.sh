@@ -27,7 +27,7 @@ module load conda
 module load cuda/12.8
 
 # Activate conda environment
-source activate dna
+source activate dnabert2_env
 
 # Check GPU availability
 echo ""

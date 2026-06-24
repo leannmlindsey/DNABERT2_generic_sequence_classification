@@ -14,26 +14,30 @@
 #   OUTPUT_FILENAME    name for the predictions CSV (e.g. test_predictions.csv)
 #   MAX_LENGTH         max BPE token length for this window
 # Optional env:
-#   BATCH_SIZE (16), CONDA_ENV (dna)
+#   BATCH_SIZE (16), CONDA_ENV (dnabert2_env)
 
 
 echo "=== inference ${VARIANT}  input=${INPUT_CSV}  output=${OUTPUT_FILENAME} ==="
 echo "Started at: $(date)  Node: $(hostname)  Job: ${SLURM_JOB_ID:-N/A}"
 
-# Activate conda (source conda.sh; conda activate dna).
-module load CUDA/12.8
-source /data/lindseylm/conda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV:-dna}"
-if [ "${CONDA_DEFAULT_ENV}" != "${CONDA_ENV:-dna}" ]; then
-    echo "ERROR: could not activate conda env '${CONDA_ENV:-dna}' (active: '${CONDA_DEFAULT_ENV:-none}'). Aborting." >&2
-    exit 1
-fi
+# --- conda env setup: BIOWULF ONLY, disabled for Delta ---------------------
+# Delta-AI inherits the submitting shell's environment (sbatch --export=ALL), so
+# activate the conda env (and load any needed module) on the LOGIN node BEFORE
+# running the driver. The block below was needed on Biowulf, where jobs did not
+# inherit the submitting shell's environment.
+# module load CUDA/12.8
+# source /u/llindsey1/miniconda3/etc/profile.d/conda.sh
+# conda activate "${CONDA_ENV:-dnabert2_env}"
+# if [ "${CONDA_DEFAULT_ENV}" != "${CONDA_ENV:-dnabert2_env}" ]; then
+#     echo "ERROR: could not activate conda env '${CONDA_ENV:-dnabert2_env}' (active: '${CONDA_DEFAULT_ENV:-none}'). Aborting." >&2
+#     exit 1
+# fi
 echo "  conda env: ${CONDA_DEFAULT_ENV}   python: $(command -v python)"
 export PYTHONNOUSERSITE=1
 
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
-export HF_HOME=/data/lindseylm/.cache/huggingface
+export HF_HOME=${HF_HOME:-/work/hdd/bfzj/llindsey1/LAMBDA_REPLICATION/hf_cache}
 
 if [ -z "${REPO_ROOT:-}" ]; then
     echo "ERROR: REPO_ROOT is not set; the launcher must pass it via --export"; exit 1

@@ -35,7 +35,7 @@ if [ -z "${CUDA_HOME}" ]; then
 fi
 
 # Activate conda environment
-source activate dna
+source activate dnabert2_env
 
 # Check GPU
 echo ""

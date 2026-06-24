@@ -12,6 +12,21 @@
 #   conda activate /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env
 #   pip install --no-cache-dir torch          # -> torch 2.12.1+cu130 (cuda 13.0, is_available True)
 #   pip install --no-cache-dir -r requirements-delta.txt
+#   pip uninstall -y triton                   # REQUIRED — see "Triton / flash-attention" below
+#
+# Triton / flash-attention (REQUIRED on GH200):
+#   DNABERT-2's remote model code ships a Triton flash-attention kernel
+#   (flash_attn_triton.py) that calls tl.dot(..., trans_b=True). `trans_b` was
+#   removed from tl.dot in Triton 3.x (bundled with torch 2.12), so the kernel
+#   fails to compile at the first training step:
+#       TypeError: dot() got an unexpected keyword argument 'trans_b'
+#   bert_layers.py already wraps the Triton import in try/except and falls back to
+#   an exact pure-PyTorch attention path when the import fails. So the fix is to
+#   REMOVE Triton (`pip uninstall -y triton`); the model then uses PyTorch
+#   attention (same math; Flash is only a speed optimization). Triton is not
+#   needed for eager-mode training/inference (only torch.compile, unused here).
+#   Downgrading Triton instead is NOT viable: Triton 2.x predates Hopper/sm_90
+#   and is ABI-incompatible with torch 2.12.
 #
 # torch is installed SEPARATELY (line above), not pinned here, because the correct
 # wheel is architecture/CUDA-specific (plain `pip install torch` resolves to the

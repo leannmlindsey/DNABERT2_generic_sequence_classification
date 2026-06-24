@@ -72,10 +72,12 @@ for LEN in ${RUN_LENGTHS}; do
     REPL_LEN_DIR="${OUTPUT_DIR}/${LEN}"
     WINNERS_JSON="${REPL_LEN_DIR}/winners.json"
 
-    # diagnostics expected for this length: fnr only if FNR_<LEN> is set.
+    # diagnostics expected for this length: fnr/phrog only if their vars are set.
     DIAGS="test fpr gc_control"
     fnr_var="FNR_${LEN}"
     [ -n "${!fnr_var:-}" ] && DIAGS="${DIAGS} fnr"
+    phrog_var="PHROG_${LEN}"
+    [ -n "${!phrog_var:-}" ] && DIAGS="${DIAGS} phrog"
 
     # genome-wide: how many CSVs did we point at?
     gw_var="GENOME_WIDE_${LEN}"
@@ -123,8 +125,15 @@ for LEN in ${RUN_LENGTHS}; do
 
         # diagnostics
         for NAME in ${DIAGS}; do
-            CSV="${INF_DIR}/${NAME}_predictions.csv"
-            MJSON="${INF_DIR}/${NAME}_predictions_metrics.json"
+            # PHROG is written under the canonical model-prefixed name the central
+            # PHROG table reads; all other surfaces use <name>_predictions.csv.
+            if [ "${NAME}" = "phrog" ]; then
+                phrog_path="${!phrog_var}"
+                CSV="${INF_DIR}/${PHROG_MODEL_TAG:-DNABERT2}_$(basename "${phrog_path}" .csv)_predictions.csv"
+            else
+                CSV="${INF_DIR}/${NAME}_predictions.csv"
+            fi
+            MJSON="${CSV%.csv}_metrics.json"
             if [ -f "${CSV}" ]; then
                 if [ -f "${MJSON}" ]; then
                     printf "    %-10s ok   %s\n" "${NAME}" "$(metrics_line "${MJSON}")"

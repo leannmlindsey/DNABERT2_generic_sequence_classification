@@ -58,7 +58,7 @@ benchmark.
 | `finetune/scripts/lambda_replication/lambda_replication.conf` | Config file for the LAMBDA-replication pipeline. |
 | `finetune/scripts/lambda_replication/run_lambda_training.sh` | Submit all finetune jobs (seed × window). |
 | `finetune/scripts/lambda_replication/run_lambda_inference.sh` | Pick the best seed, then submit embedding analysis + all diagnostic and genome-wide inference. |
-| `finetune/scripts/lambda_replication/lambda_*_job.sh` | sbatch bodies for one finetune / embedding / inference / genome-analysis job. |
+| `finetune/scripts/lambda_replication/lambda_*_job.sh` | sbatch bodies for one finetune / embedding / inference job. (`lambda_genome_analysis_job.sh` is deprecated/not submitted — genome-wide clustering is done centrally by the LAMBDA harvest.) |
 | `finetune/scripts/lambda_replication/select_best_model.py` | Pick the best of N finetune seeds per variant by test-set MCC. |
 | `finetune/scripts/lambda_replication/print_winner_exports.py` | Emit shell exports for the winning checkpoint (read by the inference job). |
 
@@ -80,25 +80,56 @@ For GPU training, install a CUDA-enabled PyTorch matching your toolkit:
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
+> **Modern CUDA PyTorch needs the Triton fix too.** Any torch ≥2.x pulls Triton
+> 3.x, which breaks DNABERT-2's bundled flash-attention kernel (`dot() got an
+> unexpected keyword argument 'trans_b'` at the first training step). Run
+> `pip uninstall -y triton` after installing torch — see the Triton note in the
+> Delta-AI recipe below. (The original `torch==1.13.1` pin ships an old Triton
+> that is unaffected.)
+
 ### Delta-AI / NCSA (GH200, aarch64)
 
 The pins above **do not** work on a GH200: it is aarch64 + Hopper (sm_90), and
 neither Python 3.8 nor `torch==1.13.1` has an aarch64 CUDA wheel. Use Python 3.11
-and a modern CUDA torch instead (confirmed 2026-06-24 on a GH200 node):
+and a modern CUDA torch instead (confirmed 2026-06-24 on a GH200 node).
+
+> The `/work/hdd/bfzj/llindsey1/...` paths below are the NCSA Delta-AI account
+> used for the paper — change the prefixes to your own filesystem (and keep the
+> env + HF cache off small/quota'd home directories).
 
 ```bash
 conda create -y -p /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env python=3.11
 conda activate /work/hdd/bfzj/llindsey1/conda/envs/dnabert2_env
 pip install --no-cache-dir torch          # -> torch 2.12.1+cu130 on py3.11 aarch64
 pip install --no-cache-dir -r requirements-delta.txt
+pip uninstall -y triton                   # REQUIRED: forces DNABERT-2 to its PyTorch attention path
 # verify CUDA is live before training:
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
 ```
 
+> **Why `pip uninstall -y triton`:** DNABERT-2's remote model code ships a Triton
+> flash-attention kernel that calls `tl.dot(..., trans_b=True)`, which Triton 3.x
+> (bundled with torch 2.12) rejects — training dies at step 0 with
+> `dot() got an unexpected keyword argument 'trans_b'`. The model auto-falls back
+> to an exact pure-PyTorch attention when Triton can't be imported, so removing
+> Triton is the fix. It isn't needed for eager training/inference. See
+> [`requirements-delta.txt`](./requirements-delta.txt) for detail.
+
 See [`requirements-delta.txt`](./requirements-delta.txt) for the full rationale and
-the pinned/unpinned split. The LAMBDA replication driver/job scripts under
-`finetune/scripts/lambda_replication/` are already pointed at Delta paths and
-`ghx4` / `bfzj-dtai-gh`.
+the pinned/unpinned split.
+
+**Delta config changes** (already applied in
+`finetune/scripts/lambda_replication/lambda_replication.conf`; adjust the `/work/hdd/...`
+prefixes for your account):
+
+- `LAMBDA_BASE` / `OUTPUT_DIR` / `HF_HOME` under `/work/hdd/bfzj/llindsey1/LAMBDA_REPLICATION/...`
+- `CONDA_ENV` = the full env path (`/work/.../conda/envs/dnabert2_env`)
+- SBATCH flags in the drivers: `--account=bfzj-dtai-gh --partition=ghx4 --gpus-per-node=1`
+- `FNR_2k` repointed to the in-dataset fixed-window file
+  `${LAMBDA_BASE}/fnr_test/2k/phage_segments_2k_1k.csv` (was a stale Biowulf `/home/...` path)
+- `PHROG_2k` added → `${LAMBDA_BASE}/fnr_test/2k/phage_annotated_segments_2k.csv` (PHROG table)
+- `INCLUDE_RANDOM_BASELINE=true` (random-embedding baseline for the LP/NN tables)
+- in-job conda activation disabled (jobs inherit the env via `sbatch --export=ALL`)
 
 The optional flash-attention path and the original environment notes are in
 [`UPSTREAM_README.md`](./UPSTREAM_README.md#3-setup-environment).
@@ -148,7 +179,10 @@ LAMBDA_v1 segment lengths (**2k / 4k** — DNABERT-2 has no 8k context, so 8k is
 skipped automatically) and for each length submits: finetune × N seeds,
 best-seed selection (by test-set MCC), pretrained embedding analysis (linear
 probe + 3-layer NN, optional random baseline), inference on the matching-length
-diagnostic CSVs, and genome-wide inference + threshold/clustering summary.
+diagnostic CSVs, and genome-wide inference (one predictions CSV per input).
+Genome-wide threshold/clustering is **not** done per-repo — the central LAMBDA
+harvest aggregates the canonical `genome_wide_*_predictions.csv` files across all
+models.
 
 ```bash
 # 1. Edit the config — LAMBDA_BASE and OUTPUT_DIR are required;
@@ -162,7 +196,8 @@ bash finetune/scripts/lambda_replication/run_lambda_training.sh
 # 3. Wait — squeue -u $USER
 
 # 4. Launch all inference (per length: pick winner by test-MCC; run embedding
-#    analysis; run inference on test, fpr, gc_control, fnr; genome-wide + sweep)
+#    analysis; run inference on test, fpr, gc_control, fnr, phrog (2k); one
+#    genome-wide inference job per input CSV)
 bash finetune/scripts/lambda_replication/run_lambda_inference.sh
 ```
 
@@ -179,10 +214,17 @@ LAMBDA_BASE/
 └── shuffled_controls/<LEN>/test_shuffled.csv     gc_control diagnostic
 ```
 
-FNR and genome-wide inputs are not part of LAMBDA_v1; provide them via the
-optional `FNR_<LEN>` and `GENOME_WIDE_<LEN>` config variables
-(`GENOME_WIDE_<LEN>` can be a single CSV or a directory of CSVs — each becomes
-its own inference job).
+FNR, PHROG, and genome-wide inputs are not part of the core LAMBDA_v1 split;
+provide them via the optional `FNR_<LEN>`, `PHROG_<LEN>`, and `GENOME_WIDE_<LEN>`
+config variables. `FNR_<LEN>` is the sliding-window phage set
+(`phage_segments_<LEN>_*.csv`); `PHROG_2k` is the phage-annotated subset
+(`phage_annotated_segments_2k.csv`, 2k only) that feeds the paper's PHROG table —
+the two are different files. The PHROG job writes the canonical
+`${PHROG_MODEL_TAG}_phage_annotated_segments_2k_predictions.csv` (the exact name
+the central PHROG table reads) and carries the input's `phrog_category` /
+`phrog_db_category` / `label` columns through alongside `pred_label`.
+`GENOME_WIDE_<LEN>` can be a single CSV or a directory of CSVs (each becomes its
+own inference job).
 
 **Output layout:**
 
@@ -192,8 +234,8 @@ its own inference job).
 │   ├── finetune/<variant>/seed-<N>/    test_results.json, saved model
 │   ├── embedding/<variant>/            embedding_analysis_results.json, .npz, classifiers
 │   ├── winners.json                    picked by run_lambda_inference.sh
-│   ├── inference/<variant>/            <dataset>_predictions.csv (+ _metrics.json)
-│   └── genome_wide_analysis/<variant>/ threshold + clustering summary CSVs
+│   └── inference/<variant>/            <dataset>_predictions.csv (+ _metrics.json),
+│                                        incl. genome_wide_<stem>_predictions.csv
 └── logs/                               SLURM stdout/stderr per job (shared)
 ```
 

@@ -12,6 +12,7 @@
 #        - fpr        fpr_test/<LEN>/bacteria_segments_<LEN>.csv (Surface B)
 #        - gc_control shuffled_controls/<LEN>/test_shuffled.csv  (Surface B)
 #        - fnr        FNR_<LEN> if set                           (Surface B, optional)
+#        - phrog      PHROG_<LEN> if set (phage_annotated, 2k)    (PHROG table, optional)
 #   4. If GENOME_WIDE_<LEN> is set, submit one genome-wide inference job per CSV
 #      per variant (Surface C), each emitting genome_wide_<stem>_predictions.csv.
 #      No aggregate analysis job — the central harvest does any clustering.
@@ -131,6 +132,19 @@ for LEN in ${RUN_LENGTHS}; do
         fi
     fi
 
+    # Optional PHROG (phage-annotated) — indirect lookup on PHROG_<LEN> (2k only).
+    # The annotated subset, distinct from FNR; feeds the paper's PHROG table.
+    phrog_var="PHROG_${LEN}"
+    PHROG_PATH="${!phrog_var:-}"
+    if [ -n "${PHROG_PATH}" ]; then
+        if [ -f "${PHROG_PATH}" ]; then
+            DIAG_NAMES+=(phrog)
+            DIAG_PATHS+=("${PHROG_PATH}")
+        else
+            echo "  WARNING: ${phrog_var}=${PHROG_PATH} not found — skipping phrog for ${LEN}"
+        fi
+    fi
+
     # Validate built-in diagnostics exist before submitting.
     for i in "${!DIAG_NAMES[@]}"; do
         if [ ! -f "${DIAG_PATHS[$i]}" ]; then
@@ -188,14 +202,22 @@ for LEN in ${RUN_LENGTHS}; do
         for i in "${!DIAG_NAMES[@]}"; do
             NAME="${DIAG_NAMES[$i]}"
             CSV="${DIAG_PATHS[$i]}"
+            # PHROG uses the canonical model-prefixed name the central PHROG table
+            # reads: ${PHROG_MODEL_TAG}_<input-stem>_predictions.csv. All other
+            # surfaces use the short <name>_predictions.csv form.
+            if [ "${NAME}" = "phrog" ]; then
+                OUT_NAME="${PHROG_MODEL_TAG:-DNABERT2}_$(basename "${CSV}" .csv)_predictions.csv"
+            else
+                OUT_NAME="${NAME}_predictions.csv"
+            fi
             JOB="inf_${LEN}_${VARIANT}_${NAME}"
-            echo "    submitting ${JOB}..."
+            echo "    submitting ${JOB} -> ${OUT_NAME} ..."
             sbatch \
                 --job-name="${JOB}" \
                 --output="${LOGDIR}/${JOB}_%j.out" \
                 --error="${LOGDIR}/${JOB}_%j.err" \
                 "${INF_FLAGS[@]}" \
-                --export="ALL,${INF_ENV},INPUT_CSV=${CSV},OUTPUT_FILENAME=${NAME}_predictions.csv" \
+                --export="ALL,${INF_ENV},INPUT_CSV=${CSV},OUTPUT_FILENAME=${OUT_NAME}" \
                 "${SCRIPT_DIR}/lambda_inference_job.sh"
             NUM_JOBS=$((NUM_JOBS + 1))
         done
